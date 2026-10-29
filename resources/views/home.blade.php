@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title','Beranda')
+@section('title','magen tengker')
 @section('subtitle','Ringkasan usaha Anda hari ini. Semua lebih mudah saat tercatat.')
 @section('content')
 <div class="stats"><article class="stat featured"><span>Saldo kas di tangan</span><strong>{{ rupiah($cash) }}</strong><small>Modal awal + uang masuk − uang keluar</small><x-icon name="wallet"/></article><article class="stat"><span>Untung hari ini</span><strong class="{{ $summary['profit']<0?'negative':'positive' }}">{{ rupiah($summary['profit']) }}</strong><small>Pengeluaran pribadi tidak mengurangi untung</small></article><article class="stat"><span>Uang masuk</span><strong>{{ rupiah($summary['income']) }}</strong><small>Total penerimaan hari ini</small></article><article class="stat"><span>Uang keluar</span><strong>{{ rupiah($summary['expense']) }}</strong><small>Termasuk kebutuhan pribadi</small></article></div>

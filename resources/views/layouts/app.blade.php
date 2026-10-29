@@ -18,7 +18,7 @@
 <div class="workspace"><header class="topbar"><button type="button" class="btn icon-button mobile-menu" data-menu-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Buka navigasi"><x-icon name="menu"/></button><div class="breadcrumb">Ruang usaha <span>/</span> <strong>@yield('title','Beranda')</strong></div><span class="today">{{ now()->translatedFormat('l, d F Y') }}</span><a href="{{ route('transactions.create') }}" class="btn primary topbar-action"><x-icon name="plus"/> Catat transaksi</a></header>
 <main id="main" class="main-content">
 @if(auth()->user()->is_demo)<div class="notice demo-notice"><strong>Mode demo</strong><span>Data contoh terpisah untuk sesi Anda. Daftar akun untuk pembukuan usaha sendiri.</span></div>@endif
-<div class="page-heading"><div><p class="eyebrow">{{ auth()->user()->business_name }}</p><h1>@yield('title','Beranda')</h1><p class="subtitle">@yield('subtitle','Catatan rapi, usaha lebih pasti.')</p></div>@yield('page-action')</div>
+<div class="page-heading"><div><p class="eyebrow">{{ auth()->user()->business_name }}</p><h1>@yield('title','magen tengker')</h1><p class="subtitle">@yield('subtitle','Catatan rapi, usaha lebih pasti.')</p></div>@yield('page-action')</div>
 @include('partials.feedback')
 @yield('content')
 <footer class="page-footer"><span>PasarKu · Pembukuan pedagang pasar</span><span>Data tersimpan di akun Anda</span></footer>
