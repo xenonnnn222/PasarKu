@@ -164,7 +164,7 @@ export default function Home() {
           <div className="col-span-12 sm:col-span-6 xl:col-span-3 rounded-card p-5 bg-gradient-to-br from-primary-700 to-primary-600 text-white shadow-md flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-primary-100">
-                Saldo Kas di Tangan
+                Saldo Kas di Hand
               </span>
               <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
                 <Wallet className="w-5 h-5 text-white" />
