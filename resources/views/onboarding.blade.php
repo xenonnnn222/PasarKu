@@ -1,0 +1,5 @@
+@extends('layouts.app')
+@section('title','Mulai pembukuan')
+@section('content')
+<div class="welcome"><a class="brand" href="{{ route('login') }}"><span class="brand-icon"><x-icon name="store"/></span><span>PasarKu<small>BUKU USAHA ANDA</small></span></a><p class="eyebrow">CATATAN KECIL, DAMPAK BESAR</p><h1>Kenali uang Anda.<br>Kembangkan usaha Anda.</h1><p class="subtitle">Pembukuan yang mudah untuk keseharian pedagang pasar.</p><div class="grid three"><article class="card"><x-icon name="record"/><h2>Catat setiap transaksi</h2><p>Pisahkan pemasukan, pengeluaran usaha, dan uang pribadi.</p></article><article class="card"><x-icon name="debts"/><h2>Kasbon tetap terpantau</h2><p>Lihat jatuh tempo dan catat setiap cicilan pelanggan.</p></article><article class="card"><x-icon name="reports"/><h2>Pahami hasil usaha</h2><p>Pantau stok, lihat laporan, lalu unduh catatan ke CSV.</p></article></div><div class="actions"><a href="{{ route('register') }}" class="btn primary">Daftar usaha <x-icon name="arrow"/></a><a href="{{ route('login') }}" class="btn secondary">Sudah punya akun</a></div></div>
+@endsection

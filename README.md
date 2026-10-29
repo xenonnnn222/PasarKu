@@ -1,30 +1,70 @@
-# PasarKu - Dashboard Keuangan Pedagang Pasar
+# PasarKu — Laravel & Blade
 
-Website dashboard keuangan *desktop-first* yang bersih, teratur, dan responsif untuk membantu pedagang pasar tradisional mencatat transaksi harian, mengelola kasbon (piutang pelanggan & utang supplier), memantau stok dagangan, serta melihat laporan keuntungan usaha.
+Pembukuan untuk pedagang pasar: transaksi pemasukan/pengeluaran, piutang dan utang dengan pembayaran cicilan, stok, laporan, CSV, serta cadangan JSON.
 
-## Cara Menjalankan
-1. Pastikan Node.js (v18+) sudah terpasang.
-2. Instal dependensi dan jalankan server pengembangan:
-   ```bash
-   npm install
-   npm run dev
-   ```
-3. Buka URL lokal yang tampil di terminal (umumnya `http://localhost:5173`).
+Aplikasi utama sekarang menggunakan **Laravel 13 + Blade**, menggantikan React/Vite. Halaman dirender di server. CSS dan JavaScript kecil dilayani langsung dari public/. Tidak memerlukan Node.js, npm, CDN, atau build aset frontend. Database awal memakai SQLite dan data dipisahkan per akun.
 
-## Cara Build Produksi
-```bash
-npm run build
-npm run preview
-```
+## Persyaratan
 
-## Akun Demo & Penyimpanan
-- **Penyimpanan**: Aplikasi ini murni *Front-End* tanpa backend. Seluruh data disimpan secara aman di `localStorage` browser dengan prefiks `pasarku:`.
-- **Akun Demo Cepat**: Klik tombol **"Masuk sebagai Demo (Lapak Sayur Bu Sari)"** di halaman Login, atau masukkan Nomor HP `081234567890` dan PIN `1234`.
+- PHP **8.3+** dengan ekstensi Laravel, pdo_sqlite, sqlite3, dan fileinfo.
+- Composer 2.
+- Untuk produksi, server web yang menjalankan PHP dan document root/Alias ke direktori **public/**.
 
-## Arsitektur & Fitur Utama
-- **Layout Desktop-First (Grid 12 Kolom)**: Sidebar navigasi kiri tetap (`256px`), Topbar dengan pencarian cepat dan tanggal hari ini, serta container konten maksimal `1280px`. Di layar `< 768px`, sidebar otomatis menjadi menu *hamburger* dan tabel berubah menjadi kartu.
-- **Beranda**: 4 kartu ringkasan sejajar (*Saldo Kas*, *Untung Hari Ini*, *Uang Masuk*, *Uang Keluar*), grafik batang untung 7 hari terakhir, tabel transaksi terakhir yang dapat diurutkan (*sortable*), aksi cepat (*Jual* & *Belanja*), dan peringatan *Perlu Perhatian*.
-- **Catat Transaksi**: Layout 2 kolom dengan input nominal teks terformat Rupiah secara otomatis (`Rp 150.000`), tombol tambah nominal cepat, kategori ikon, toggle *Belum dibayar (kasbon)*, dan ringkasan transaksi hari ini di sisi kanan.
-- **Kasbon & Riwayat Tabular**: Ditampilkan dalam komponen `DataTable` yang mendukung pengurutan kolom (*sorting*), pencarian, dan filter status/tanggal, serta modal di tengah layar untuk tambah/ubah/cicilan.
-- **Stok & Kalkulator Harga Jual**: Tabel stok dengan kontrol `+/-` langsung di baris tabel, pencatatan *Stok Masuk* & *Barang Susut*, berdampingan dengan *Kalkulator Harga Jual* (*Margin* vs *Markup*).
-- **Laporan Keuangan**: Ringkasan 4 kolom, grafik batang pemasukan vs pengeluaran berdampingan dengan grafik donat (*Donut Chart*) rincian pengeluaran per kategori, ekspor CSV ber-BOM UTF-8, dan mode cetak (`@media print`).
+PHP XAMPP 8.2 yang ditemukan pada komputer pengembangan belum memenuhi versi minimum. Gunakan PHP 8.3/8.4; jangan mengabaikan pemeriksaan platform Composer. Lock file diselesaikan dengan target PHP 8.3 agar tidak memilih dependency yang hanya mendukung PHP 8.4.
+
+## Menjalankan lokal
+
+Jalankan composer install. Pada instalasi pertama, salin .env.example menjadi .env, buat database/database.sqlite, lalu jalankan:
+
+    php artisan key:generate
+    php artisan migrate
+    php artisan serve
+
+PowerShell untuk membuat berkas awal:
+
+    Copy-Item .env.example .env
+    New-Item -ItemType File database/database.sqlite
+
+Linux/macOS:
+
+    cp .env.example .env
+    touch database/database.sqlite
+
+Buka http://127.0.0.1:8000. Daftar akun dengan nomor HP dan PIN 4 angka, atau gunakan tombol **Coba demo Lapak Bu Sari**. Setiap login demo mendapat dataset terpisah. Tidak ada PIN demo bersama yang membuka pembukuan pengunjung lain.
+
+## Fitur
+
+- Beranda: saldo kas, untung harian, arus kas, kasbon terlambat, dan stok menipis.
+- Transaksi: tambah/ubah/hapus, pencarian, pengurutan, dan filter tanggal. Penjualan belum dibayar menjadi piutang, bukan uang kas.
+- Kasbon: piutang pelanggan, utang supplier, status jatuh tempo, riwayat cicilan, dan tautan WhatsApp.
+- Pembayaran kasbon dan perubahan saldo dilakukan dalam satu database transaction. Pembayaran berlebih ditolak. Transaksi otomatis tidak dapat diedit/dihapus terpisah dari tagihannya.
+- Stok: jumlah pecahan dua desimal, stok masuk dengan pengeluaran opsional, barang susut, dan kalkulator margin/markup.
+- Laporan harian/mingguan/bulanan/rentang tanggal, tabel angka grafik, CSV UTF-8 untuk Excel, dan tampilan cetak.
+- Profil usaha, modal awal, perubahan PIN, tema terang/gelap, serta tulisan besar.
+- Cadangan JSON dan pemulihan ke akun kosong; impor pembukuan localStorage versi React.
+
+Uang disimpan sebagai integer Rupiah. Saldo kas = modal awal + pemasukan − seluruh pengeluaran. Untung usaha = pemasukan − biaya usaha. Pribadi (prive) mengurangi kas tetapi tidak mengurangi untung usaha. Ringkasan ini berbasis arus kas, bukan akuntansi HPP per barang terjual. Nilai barang susut dilaporkan terpisah.
+
+## Memindahkan data React
+
+Data lama tetap berada pada browser/origin semula. Setelah daftar akun Laravel baru pada origin yang sama, buka **Pengaturan → Impor pembukuan → Impor data lama dari browser ini**. Aplikasi mengenali kunci pasarku:transactions, pasarku:debts, pasarku:products, pasarku:wasteLogs, modal awal, serta pengaturan tampilan. PIN dan status login lama tidak diimpor.
+
+Impor hanya diizinkan ketika pembukuan akun kosong. Data diperiksa dan disimpan secara atomik; input tidak valid tidak menghasilkan impor sebagian. Simpan cadangan dan verifikasi hasil sebelum menghapus data browser lama. Jika perangkat/origin berbeda (termasuk port dan protokol), gunakan cadangan JSON.
+
+## Pengujian
+
+    php artisan test
+    php artisan view:cache
+    composer validate --strict --no-check-publish
+
+Tes memakai SQLite :memory: dengan konfigurasi testing yang dipaksakan dalam phpunit.xml. Cakupan: autentikasi/hash PIN, pembatasan login, CSRF, pemisahan akun, saldo/prive, kasbon, stok/susut, laporan/CSV, HTML escaping, impor atomik, serta backup/restore. Tidak memakai database produksi.
+
+Pengujian dilakukan melalui HTTP/tes framework, tanpa computer use. Responsivitas visual serta interaksi JavaScript perlu diperiksa manual pada browser pengguna.
+
+## Jenkins dan server
+
+Lihat [panduan deployment](deploy/README.md). Tersedia Jenkinsfile, deploy/ci.sh, deploy/deploy.sh, contoh .env produksi, dan Alias Apache untuk /registration-mis/.
+
+Seluruh proyek Laravel tidak boleh dilayani sebagai document root: hanya direktori public/ yang tersedia melalui web. Skrip menyiapkan rilis terpisah, database/session persisten, tes sebelum deployment, dan pergantian symlink setelah dependency, migrasi, dan cache berhasil. Cadangan SQLite dibuat sebelum migrasi pada database yang sudah berisi data.
+
+Kode React dipertahankan dalam **legacy/react/** untuk referensi dan pemulihan. Folder tersebut tidak digunakan aplikasi utama dan tidak disalin oleh skrip deployment. Riwayat sebelumnya juga tetap tersedia pada branch development. Migrasi lokal berada di branch migration/laravel-blade dan belum dipublikasikan ke server.
