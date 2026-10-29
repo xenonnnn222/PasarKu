@@ -63,8 +63,8 @@ Pengujian dilakukan melalui HTTP/tes framework, tanpa computer use. Responsivita
 
 ## Jenkins dan server
 
-Lihat [panduan deployment](deploy/README.md). Tersedia Jenkinsfile, deploy/ci.sh, deploy/deploy.sh, contoh .env produksi, dan Alias Apache untuk /pasarku/.
+Lihat [panduan deployment](deploy/README.md). Tersedia Jenkinsfile, deploy/jenkins.sh, deploy/ci.sh, deploy/siapkan-server.sh, contoh .env produksi, dan Alias Apache untuk /pasarku/.
 
-Seluruh proyek Laravel tidak boleh dilayani sebagai document root: hanya direktori public/ yang tersedia melalui web. Skrip menyiapkan rilis terpisah, database/session persisten, tes sebelum deployment, dan pergantian symlink setelah dependency, migrasi, dan cache berhasil. Cadangan SQLite dibuat sebelum migrasi pada database yang sudah berisi data.
+Seluruh proyek Laravel tidak boleh dilayani sebagai document root: hanya direktori public/ yang tersedia melalui web. Jenkins menjalankan tes lebih dulu; bila lulus, kode disalin dengan rsync ke /var/www/html/pasarku tanpa menimpa .env dan database, lalu Composer, migrasi, dan cache dijalankan.
 
 Kode React lama sudah dihapus dari branch main; riwayatnya tetap tersedia di Git dan branch development.

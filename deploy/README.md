@@ -1,75 +1,58 @@
 # Deployment PasarKu Laravel
 
-Laravel memerlukan PHP **8.3 atau lebih baru** serta Composer pada agent Jenkins dan server web. Node.js dan npm tidak digunakan.
+Laravel memerlukan PHP **8.3 atau lebih baru** serta Composer di server tempat Jenkins berjalan. Node.js dan npm tidak digunakan.
 
-Urutan pemasangan:
+Alur CI/CD: push ke GitHub → Jenkins mengambil kode ke workspace → tes (`deploy/ci.sh`) → `rsync` ke `/var/www/html/pasarku` → `composer install`, migrasi, cache, dan hak akses → website `https://dragonfruitdevops.web.id/pasarku/`.
 
-1. Jalankan sekali di server: `sudo bash deploy/siapkan-server.sh` (PHP 8.3-FPM, Composer, modul Apache, `shared/.env`).
-2. Jalankan build Jenkins. `deploy/jenkins.sh` menguji lalu membuat rilis di `current/`; website belum berubah.
-3. Setelah build SUCCESS, pasang `apache-pasarku.conf` (bagian 2). Mulai saat itu `/pasarku/` dilayani Laravel.
-
-## 1. Siapkan lingkungan server sekali
-
-Pastikan ekstensi PHP `ctype`, `curl`, `dom`, `fileinfo`, `filter`, `hash`, `mbstring`, `openssl`, `pcre`, `PDO`, `pdo_sqlite`, `session`, `tokenizer`, `xml`, `sqlite3`, dan `zip` tersedia. Periksa dengan `php -v`, `php -m`, dan `composer --version` dalam lingkungan agent Jenkins yang menjalankan job. Untuk Jenkins dalam container, instal dependensi pada image container tersebut dan pastikan folder deployment dapat dijangkau server web.
-
-Skrip contoh menempatkan aplikasi di `/var/www/pasarku`, terpisah dari document root Apache. Struktur setelah deployment:
-
-```text
-/var/www/pasarku/
-  releases/<waktu>-<commit>/   kode setiap rilis
-  current -> releases/...    rilis yang sedang dilayani
-  shared/.env                konfigurasi dan APP_KEY tetap
-  shared/database.sqlite     database tetap
-  shared/storage/            session, cache, dan log tetap
-  shared/backups/            cadangan SQLite sebelum migrasi
-```
-
-Administrator menyiapkan folder untuk pengguna OS yang benar-benar menjalankan agent Jenkins. Nama berikut adalah contoh; periksa menggunakan `id` pada agent (label `Running as SYSTEM` di Jenkins bukan nama akun Linux):
+## 1. Siapkan server sekali
 
 ```bash
-sudo install -d -o jenkins -g www-data -m 2770 /var/www/pasarku
-sudo install -d -o jenkins -g www-data -m 2770 /var/www/pasarku/shared
-sudo install -o jenkins -g www-data -m 640 deploy/.env.production.example /var/www/pasarku/shared/.env
+sudo bash deploy/siapkan-server.sh
 ```
 
-Tambahkan pengguna agent ke grup web jika diperlukan, lalu mulai ulang service/agent agar keanggotaan grup diperbarui. Jika agent berjalan sebagai root, sesuaikan pemilik folder dan rencana penggunaan akun service sebelum penggunaan produksi. Jangan menyalin `.env.example` pada setiap build: `APP_KEY` dan database harus bertahan antar-rilis. Skrip hanya membuat APP_KEY saat nilainya masih kosong.
+Skrip ini memasang PHP 8.3-FPM (PPA ondrej/php, ditambahkan manual dengan pemeriksaan sidik jari kunci), Composer (dengan pemeriksaan checksum), modul Apache, serta membuat `/var/www/html/pasarku/.env` beserta `APP_KEY` dan `database/database.sqlite`. Keduanya hanya dibuat sekali; `rsync` Jenkins tidak menimpanya.
 
-## 2. Konfigurasi Apache
+## 2. Job Jenkins
 
-Gunakan `apache-pasarku.conf` sebagai konfigurasi Alias, bukan menyalin seluruh Laravel ke document root. Alias menyediakan URL `/pasarku/` dan menunjuk ke `/var/www/pasarku/current/public`.
-
-```bash
-# Hanya setelah /var/www/pasarku/current/public ada (rilis Laravel pertama sukses):
-test -f /var/www/pasarku/current/public/index.php
-sudo cp /etc/apache2/conf-available/pasarku.conf /etc/apache2/conf-available/pasarku.conf.sebelum-laravel
-sudo cp deploy/apache-pasarku.conf /etc/apache2/conf-available/pasarku.conf
-sudo apachectl configtest && sudo systemctl reload apache2
-```
-
-Konfigurasi ini menggantikan Alias lama (`/var/www/pasarku/static`). Untuk membatalkan, salin balik `pasarku.conf.sebelum-laravel` lalu reload. Handler PHP 8.3-FPM hanya berlaku di folder PasarKu, dan aturan rewrite ada di konfigurasi Apache (bukan `.htaccess`) karena Alias memerlukan `RewriteBase /pasarku/`. Jika web server menggunakan Nginx, gunakan document root `current/public` dan konfigurasi PHP-FPM yang sesuai; berkas Apache di atas tidak berlaku. Dokumentasi resmi: https://laravel.com/framework/docs/deployment .
-
-## 3. Ganti job Jenkins
-
-Untuk job Freestyle yang sekarang dipakai, ganti seluruh **Execute shell** dengan:
+Di job Freestyle, **Execute shell** berisi:
 
 ```bash
 bash deploy/jenkins.sh
 ```
 
-Tambahkan **Publish JUnit test result report** dengan pola `build/junit.xml` bila plugin JUnit tersedia. Tetap gunakan repository dan branch `main`, serta **GitHub hook trigger for GITScm polling**. Hindari concurrent builds untuk job ini; skrip deployment juga memakai `flock` untuk mencegah dua proses deployment berjalan bersamaan.
+`deploy/jenkins.sh` menjalankan langkah berikut:
 
-Alternatif: gunakan **Pipeline script from SCM** dengan `Jenkinsfile` yang tersedia. Stage deployment hanya berjalan untuk `main`; branch migrasi menjalankan tes saja.
+| Perintah | Fungsi |
+|---|---|
+| `bash deploy/ci.sh` | Tes Laravel; jika gagal, langkah berikutnya tidak dijalankan |
+| `rsync -avz --exclude '.git' --exclude '.env' ... ./ /var/www/html/pasarku/` | Menyalin workspace Jenkins ke folder website; `.git`, `.env`, `vendor`, `build`, dan database tidak ikut |
+| `composer install --optimize-autoloader --no-dev` | Memasang library PHP produksi |
+| `php artisan migrate --force` | Memperbarui skema database |
+| `php artisan optimize` | Cache konfigurasi, route, dan view |
+| `chown -R www-data:www-data` | Folder dimiliki user web server |
+| `chmod -R 775 storage` dan `bootstrap/cache` | Laravel dapat menulis log, sesi, dan cache |
 
-CI menjalankan Composer validation, dependency installation, platform checks,  tes HTTP/fitur, dan kompilasi Blade. Deployment memeriksa penanda bahwa commit yang sama sudah lulus CI dan checkout bersih. Rilis baru baru dipublikasikan setelah dependency, migrasi, dan cache berhasil. Jika tes gagal, tidak ada penyalinan rilis ke server.
+Aktifkan **GitHub hook trigger for GITScm polling** agar push memicu build otomatis. Tambahkan **Publish JUnit test result report** dengan pola `build/junit.xml` bila plugin JUnit tersedia.
 
-## 4. Verifikasi dan data lama
+## 3. Konfigurasi Apache
 
-Setelah build SUCCESS, buka `https://dragonfruitdevops.web.id/pasarku/up`, lalu `/pasarku/login`. Daftar akun Laravel baru. Buka **Pengaturan → Impor pembukuan** bila punya data dari versi lama. Karena alamat berubah ke HTTPS domain, data localStorage lama (http://103.139.193.51) tidak terbaca otomatis; gunakan file cadangan JSON. Data lama tidak otomatis terkirim ke server; PIN lama tidak diimpor. Pembukuan akun harus kosong sebelum impor untuk mencegah penimpaan data.
+`/var/www/html/pasarku` berada di dalam document root Apache, sehingga `apache-pasarku.conf` **menutup seluruh folder kecuali `public/`**. Tanpa ini, `.env`, database, dan log dapat diunduh dari browser.
 
-Uji transaksi baru, pembayaran kasbon, stok masuk/susut, ekspor CSV, dan login ulang. Hasil JUnit menjadi bukti pengujian CI/CD. URL aset dibuat oleh Laravel melalui `asset()` dan `route()`, termasuk prefix subfolder ketika Alias Apache benar.
+Pasang setelah build Jenkins pertama SUCCESS:
 
-## Pemulihan rilis
+```bash
+test -f /var/www/html/pasarku/public/index.php
+sudo cp /etc/apache2/conf-available/pasarku.conf /etc/apache2/conf-available/pasarku.conf.sebelum-laravel
+sudo cp deploy/apache-pasarku.conf /etc/apache2/conf-available/pasarku.conf
+sudo apache2ctl configtest && sudo systemctl reload apache2
+```
 
-Rilis lama tetap berada di `releases/`; administrator dapat mengarahkan `current` ke rilis sebelumnya. Perubahan database tidak dibatalkan oleh pergantian symlink. Gunakan cadangan SQLite jika perlu memulihkan data dan hentikan penulisan selama pemulihan. Jangan menjalankan `migrate:fresh`, `db:wipe`, atau mengganti APP_KEY pada database produksi yang berisi data.
+Untuk membatalkan, salin balik `pasarku.conf.sebelum-laravel` lalu reload. Handler PHP 8.3-FPM hanya berlaku di folder PasarKu, dan aturan rewrite ada di konfigurasi Apache (bukan `.htaccess`) karena Alias memerlukan `RewriteBase /pasarku/`.
 
-Skrip ini disiapkan dan diuji sintaksnya secara lokal. Instalasi PHP/Composer, konfigurasi Apache, izin filesystem Linux, dan deployment pada server harus diverifikasi di lingkungan server sebelum merge ke `main`.
+## 4. Verifikasi
+
+Buka `https://dragonfruitdevops.web.id/pasarku/up`, lalu `/pasarku/login`, dan daftar akun baru. Pastikan `https://dragonfruitdevops.web.id/pasarku/.env` tidak dapat diunduh. Aplikasi harus dibuka lewat HTTPS karena cookie sesi diset `secure`.
+
+Bila punya data dari versi lama, gunakan **Pengaturan → Impor pembukuan** dengan file cadangan JSON. Pembukuan akun harus kosong sebelum impor.
+
+Jangan menjalankan `migrate:fresh`, `db:wipe`, atau mengganti `APP_KEY` pada database yang berisi data. Salin `database/database.sqlite` sebelum perubahan besar.

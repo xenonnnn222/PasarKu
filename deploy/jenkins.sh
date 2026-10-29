@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# Satu pintu masuk untuk job Jenkins (Freestyle "Execute shell" maupun Jenkinsfile).
+# Langkah job Jenkins: tes, sinkronisasi workspace ke folder website, lalu siapkan Laravel.
+# Isinya sama dengan "Execute shell" di job; lihat deploy/README.md.
 set -euo pipefail
 
-cd "${WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-branch="${GIT_BRANCH:-$(git branch --show-current)}"
-echo "Build commit $(git rev-parse --short HEAD) dari $branch"
+APP=/var/www/html/pasarku
 
+# Tes dulu; kalau gagal, website tidak disentuh.
 bash deploy/ci.sh
 
-# Branch selain main hanya diuji, tidak di-deploy.
-case "$branch" in
-    main|origin/main|refs/heads/main) bash deploy/deploy.sh ;;
-    *) echo 'Bukan branch main: deployment dilewati.' ;;
-esac
+# Sinkronisasi workspace Jenkins ke folder website. .env dan database di server tidak ditimpa.
+rsync -avz --exclude '.git' --exclude '.env' --exclude 'vendor' --exclude 'build' --exclude 'database/*.sqlite' ./ "$APP/"
+
+cd "$APP"
+composer install --optimize-autoloader --no-dev --no-interaction
+php artisan migrate --force
+php artisan optimize
+
+chown -R www-data:www-data "$APP"
+chmod -R 775 "$APP/storage"
+chmod -R 775 "$APP/bootstrap/cache"

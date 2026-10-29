@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
-# Persiapan server sekali jalan untuk Laravel PasarKu (Ubuntu + Apache).
+# Persiapan server sekali jalan untuk Laravel PasarKu (Ubuntu 22.04 + Apache).
 # Jalankan: sudo bash deploy/siapkan-server.sh
 # Tidak mengubah Alias /pasarku yang aktif; website lama tetap tampil sampai Alias diganti.
 set -euo pipefail
+
+APP=/var/www/html/pasarku
+PPA_KEY=14AA40EC0831756756D7F66C4F4EA0AAE5267A6C
 
 [[ $(id -u) -eq 0 ]] || { echo 'Jalankan dengan sudo bash.' >&2; exit 1; }
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . /etc/os-release
 echo "Server: $PRETTY_NAME"
 
-# 1. PHP 8.3. Ubuntu 22.04 belum punya paketnya, jadi pakai PPA ondrej/php.
+# 1. PHP 8.3 dari PPA ondrej/php. Ditambahkan manual karena add-apt-repository
+#    memanggil API Launchpad yang sering timeout dari server ini.
 apt-get update
 if ! apt-cache show php8.3-cli >/dev/null 2>&1; then
-    apt-get install -y software-properties-common
-    add-apt-repository -y ppa:ondrej/php
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x$PPA_KEY" | gpg --dearmor --yes -o /etc/apt/keyrings/ondrej-php.gpg
+    gpg --show-keys --with-colons /etc/apt/keyrings/ondrej-php.gpg | grep -q "^fpr:::::::::$PPA_KEY:" || { echo 'Sidik jari kunci PPA tidak cocok.' >&2; exit 1; }
+    echo "deb [signed-by=/etc/apt/keyrings/ondrej-php.gpg] https://ppa.launchpadcontent.net/ondrej/php/ubuntu $VERSION_CODENAME main" > /etc/apt/sources.list.d/ondrej-php.list
     apt-get update
 fi
 apt-get install -y php8.3-cli php8.3-fpm php8.3-sqlite3 php8.3-mbstring php8.3-xml php8.3-curl php8.3-zip php8.3-intl unzip rsync
@@ -37,11 +43,14 @@ fi
 a2enmod rewrite proxy_fcgi setenvif
 systemctl enable --now php8.3-fpm
 
-# 4. Folder rilis bersama. .env hanya dibuat sekali agar APP_KEY dan data tidak hilang.
-install -d -g www-data -m 2770 /var/www/pasarku/shared
-if [[ ! -f /var/www/pasarku/shared/.env ]]; then
-    install -g www-data -m 640 deploy/.env.production.example /var/www/pasarku/shared/.env
+# 4. .env dan database dibuat sekali; rsync Jenkins tidak menimpa keduanya.
+install -d -o www-data -g www-data -m 775 "$APP" "$APP/database"
+if [[ ! -f "$APP/.env" ]]; then
+    install -o www-data -g www-data -m 640 deploy/.env.production.example "$APP/.env"
+    key="base64:$(php -r 'echo base64_encode(random_bytes(32));')"
+    sed -i "s|^APP_KEY=.*|APP_KEY=$key|" "$APP/.env"
 fi
+[[ -f "$APP/database/database.sqlite" ]] || install -o www-data -g www-data -m 664 /dev/null "$APP/database/database.sqlite"
 
 apache2ctl configtest
 systemctl reload apache2
@@ -52,4 +61,4 @@ php -v | head -1
 composer --version
 systemctl is-active php8.3-fpm
 echo "Pengguna yang menjalankan Jenkins: $(ps -o user= -C java | sort -u | tr '\n' ' ')"
-echo 'Selesai. Langkah berikutnya: aktifkan tahap Laravel di Jenkins (lihat deploy/README.md).'
+echo 'Selesai. Langkah berikutnya: Build Now di Jenkins.'
