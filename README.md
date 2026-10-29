@@ -63,8 +63,8 @@ Pengujian dilakukan melalui HTTP/tes framework, tanpa computer use. Responsivita
 
 ## Jenkins dan server
 
-Lihat [panduan deployment](deploy/README.md). Tersedia Jenkinsfile, deploy/ci.sh, deploy/deploy.sh, contoh .env produksi, dan Alias Apache untuk /registration-mis/.
+Lihat [panduan deployment](deploy/README.md). Tersedia Jenkinsfile, deploy/ci.sh, deploy/deploy.sh, contoh .env produksi, dan Alias Apache untuk /pasarku/.
 
 Seluruh proyek Laravel tidak boleh dilayani sebagai document root: hanya direktori public/ yang tersedia melalui web. Skrip menyiapkan rilis terpisah, database/session persisten, tes sebelum deployment, dan pergantian symlink setelah dependency, migrasi, dan cache berhasil. Cadangan SQLite dibuat sebelum migrasi pada database yang sudah berisi data.
 
-Kode React dipertahankan dalam **legacy/react/** untuk referensi dan pemulihan. Folder tersebut tidak digunakan aplikasi utama dan tidak disalin oleh skrip deployment. Riwayat sebelumnya juga tetap tersedia pada branch development. Migrasi lokal berada di branch migration/laravel-blade dan belum dipublikasikan ke server.
+Kode React lama sudah dihapus dari branch main; riwayatnya tetap tersedia di Git dan branch development.

@@ -1,6 +1,12 @@
 # Deployment PasarKu Laravel
 
-Laravel memerlukan PHP **8.3 atau lebih baru** serta Composer pada agent Jenkins dan server web. Versi React sebelumnya hanya membutuhkan static hosting; konfigurasi web server sekarang harus menjalankan PHP dan mengarah ke **public/**. Node.js dan npm tidak digunakan.
+Laravel memerlukan PHP **8.3 atau lebih baru** serta Composer pada agent Jenkins dan server web. Node.js dan npm tidak digunakan.
+
+Urutan pemasangan:
+
+1. Jalankan sekali di server: `sudo bash deploy/siapkan-server.sh` (PHP 8.3-FPM, Composer, modul Apache, `shared/.env`).
+2. Jalankan build Jenkins. `deploy/jenkins.sh` menguji lalu membuat rilis di `current/`; website belum berubah.
+3. Setelah build SUCCESS, pasang `apache-pasarku.conf` (bagian 2). Mulai saat itu `/pasarku/` dilayani Laravel.
 
 ## 1. Siapkan lingkungan server sekali
 
@@ -30,31 +36,27 @@ Tambahkan pengguna agent ke grup web jika diperlukan, lalu mulai ulang service/a
 
 ## 2. Konfigurasi Apache
 
-Gunakan `apache-pasarku.conf` sebagai konfigurasi Alias, bukan menyalin seluruh Laravel ke document root. Alias mempertahankan URL `/registration-mis/` dan menunjuk ke `/var/www/pasarku/current/public`.
+Gunakan `apache-pasarku.conf` sebagai konfigurasi Alias, bukan menyalin seluruh Laravel ke document root. Alias menyediakan URL `/pasarku/` dan menunjuk ke `/var/www/pasarku/current/public`.
 
 ```bash
+# Hanya setelah /var/www/pasarku/current/public ada (rilis Laravel pertama sukses):
+test -f /var/www/pasarku/current/public/index.php
+sudo cp /etc/apache2/conf-available/pasarku.conf /etc/apache2/conf-available/pasarku.conf.sebelum-laravel
 sudo cp deploy/apache-pasarku.conf /etc/apache2/conf-available/pasarku.conf
-sudo a2enmod rewrite
-# Aktifkan Alias setelah rilis Laravel pertama berhasil dibuat oleh Jenkins:
-sudo a2enconf pasarku
-sudo apachectl configtest
-sudo systemctl reload apache2
+sudo apachectl configtest && sudo systemctl reload apache2
 ```
 
-Siapkan berkas konfigurasi terlebih dahulu, tetapi tunggu sampai deployment pertama menghasilkan `current/public` sebelum mengaktifkan Alias dan me-reload Apache. Dengan begitu alamat lama tetap dilayani selama persiapan. PHP 8.3+ harus sudah dikonfigurasi pada Apache (mod_php atau PHP-FPM). Jika web server menggunakan Nginx, gunakan document root `current/public` dan konfigurasi PHP-FPM yang sesuai; berkas Apache di atas tidak berlaku. Dokumentasi resmi: https://laravel.com/framework/docs/deployment .
+Konfigurasi ini menggantikan Alias lama (`/var/www/pasarku/static`). Untuk membatalkan, salin balik `pasarku.conf.sebelum-laravel` lalu reload. Handler PHP 8.3-FPM hanya berlaku di folder PasarKu, dan aturan rewrite ada di konfigurasi Apache (bukan `.htaccess`) karena Alias memerlukan `RewriteBase /pasarku/`. Jika web server menggunakan Nginx, gunakan document root `current/public` dan konfigurasi PHP-FPM yang sesuai; berkas Apache di atas tidak berlaku. Dokumentasi resmi: https://laravel.com/framework/docs/deployment .
 
 ## 3. Ganti job Jenkins
 
 Untuk job Freestyle yang sekarang dipakai, ganti seluruh **Execute shell** dengan:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-bash deploy/ci.sh
-bash deploy/deploy.sh
+bash deploy/jenkins.sh
 ```
 
-Tambahkan **Publish JUnit test result report** dengan pola `build/junit.xml` bila plugin JUnit tersedia. Tetap gunakan repository dan branch `main`, serta **GitHub hook trigger for GITScm polling**. Profil NodeJS lama boleh dinonaktifkan karena tidak digunakan. Hindari concurrent builds untuk job ini; skrip deployment juga memakai `flock` untuk mencegah dua proses deployment berjalan bersamaan.
+Tambahkan **Publish JUnit test result report** dengan pola `build/junit.xml` bila plugin JUnit tersedia. Tetap gunakan repository dan branch `main`, serta **GitHub hook trigger for GITScm polling**. Hindari concurrent builds untuk job ini; skrip deployment juga memakai `flock` untuk mencegah dua proses deployment berjalan bersamaan.
 
 Alternatif: gunakan **Pipeline script from SCM** dengan `Jenkinsfile` yang tersedia. Stage deployment hanya berjalan untuk `main`; branch migrasi menjalankan tes saja.
 
@@ -62,7 +64,7 @@ CI menjalankan Composer validation, dependency installation, platform checks,  t
 
 ## 4. Verifikasi dan data lama
 
-Setelah build SUCCESS, buka `http://103.139.193.51/registration-mis/up`, lalu `/registration-mis/login`. Daftar akun Laravel baru. Buka **Pengaturan → Impor pembukuan** pada browser dan origin yang sama dengan versi React untuk memindahkan data localStorage. Gunakan file cadangan JSON bila berpindah perangkat/origin. Data React tidak otomatis terkirim ke server; PIN lama tidak diimpor. Pembukuan akun harus kosong sebelum impor untuk mencegah penimpaan data.
+Setelah build SUCCESS, buka `https://dragonfruitdevops.web.id/pasarku/up`, lalu `/pasarku/login`. Daftar akun Laravel baru. Buka **Pengaturan → Impor pembukuan** bila punya data dari versi lama. Karena alamat berubah ke HTTPS domain, data localStorage lama (http://103.139.193.51) tidak terbaca otomatis; gunakan file cadangan JSON. Data lama tidak otomatis terkirim ke server; PIN lama tidak diimpor. Pembukuan akun harus kosong sebelum impor untuk mencegah penimpaan data.
 
 Uji transaksi baru, pembayaran kasbon, stok masuk/susut, ekspor CSV, dan login ulang. Hasil JUnit menjadi bukti pengujian CI/CD. URL aset dibuat oleh Laravel melalui `asset()` dan `route()`, termasuk prefix subfolder ketika Alias Apache benar.
 
