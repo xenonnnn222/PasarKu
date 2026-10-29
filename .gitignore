@@ -3,6 +3,8 @@
 /dist/
 /dist-ssr/
 /build/
+/legacy/react/node_modules/
+/legacy/react/dist/
 /.phpunit.cache/
 /.phpunit.result.cache
 /.env
