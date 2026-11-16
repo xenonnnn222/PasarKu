@@ -1,10 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\User;
 use App\Services\DemoData;
-use App\Support\Bookkeeping;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -13,58 +18,78 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function loginForm()
+    public function loginForm(): View
     {
         return view('auth', ['register' => false]);
     }
 
-    public function registerForm()
+    public function registerForm(): View
     {
         return view('auth', ['register' => true]);
     }
 
-    public function register(Request $r)
+    public function register(RegisterRequest $request): RedirectResponse
     {
-        $r->merge(['phone' => Bookkeeping::phone((string) $r->input('phone'))]);
-        $data = $r->validate(['name' => 'required|string|max:100', 'business_name' => 'required|string|max:150', 'phone' => ['required', 'regex:/^08[1-9][0-9]{7,10}$/', 'unique:users,phone'], 'pin' => ['required', 'regex:/^\d{4}$/', 'confirmed'], 'starting_cash' => 'required|integer|min:0|max:'.Bookkeeping::MAX_MONEY]);
-        $user = User::create([...$data, 'password' => $data['pin']]);
-        Auth::login($user);
-        $r->session()->regenerate();
+        $data = $request->validated();
 
-        return redirect()->route('home')->with('success', 'Usaha Anda siap dicatat. Selamat datang!');
+        $user = User::create([
+            ...$data,
+            'password' => $data['pin'],
+        ]);
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        return redirect()
+            ->route('home')
+            ->with('success', 'Usaha Anda siap dicatat. Selamat datang!');
     }
 
-    public function login(Request $r)
+    public function login(LoginRequest $request): RedirectResponse
     {
-        $r->merge(['phone' => Bookkeeping::phone((string) $r->input('phone'))]);
-        $data = $r->validate(['phone' => 'required|string|max:20', 'pin' => ['required', 'regex:/^\d{4}$/']]);
+        $data = $request->validated();
+
         if (! Auth::attempt(['phone' => $data['phone'], 'password' => $data['pin']])) {
-            throw ValidationException::withMessages(['phone' => 'Nomor HP atau PIN tidak sesuai.']);
+            throw ValidationException::withMessages([
+                'phone' => 'Nomor HP atau PIN tidak sesuai.',
+            ]);
         }
-        $r->session()->regenerate();
+
+        $request->session()->regenerate();
 
         return redirect()->intended(route('home'));
     }
 
-    public function demo(Request $r, DemoData $demo)
+    public function demo(Request $request, DemoData $demo): RedirectResponse
     {
-        $user = DB::transaction(function () use ($demo) {
-            $user = User::create(['name' => 'Bu Sari', 'business_name' => 'Lapak Sayur Bu Sari', 'phone' => 'demo:'.Str::uuid(), 'password' => Str::random(40), 'starting_cash' => 500000, 'is_demo' => true]);
+        $user = DB::transaction(function () use ($demo): User {
+            $user = User::create([
+                'name' => 'Bu Sari',
+                'business_name' => 'Lapak Sayur Bu Sari',
+                'phone' => 'demo:'.Str::uuid(),
+                'password' => Str::random(40),
+                'starting_cash' => 500000,
+                'is_demo' => true,
+            ]);
+
             $demo->populate($user);
 
             return $user;
         });
-        Auth::login($user);
-        $r->session()->regenerate();
 
-        return redirect()->route('home')->with('success', 'Mode demo aktif. Data contoh ini terpisah dari pengguna lain.');
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        return redirect()
+            ->route('home')
+            ->with('success', 'Mode demo aktif. Data contoh ini terpisah dari pengguna lain.');
     }
 
-    public function logout(Request $r)
+    public function logout(Request $request): RedirectResponse
     {
         Auth::logout();
-        $r->session()->invalidate();
-        $r->session()->regenerateToken();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
         return redirect()->route('login');
     }

@@ -9,10 +9,16 @@ APP=/var/www/html/pasarku
 bash deploy/ci.sh
 
 # Sinkronisasi workspace Jenkins ke folder website. .env dan database di server tidak ditimpa.
-rsync -avz --exclude '.git' --exclude '.env' --exclude 'vendor' --exclude 'build' --exclude 'database/*.sqlite' ./ "$APP/"
+rsync -avz --exclude '.git' --exclude '.env' --exclude 'vendor' --exclude 'build' --exclude 'database/*.sqlite*' ./ "$APP/"
 
 cd "$APP"
 composer install --optimize-autoloader --no-dev --no-interaction
+
+# Cadangkan database SQLite sebelum menjalankan migrasi skema produksi
+if [[ -f "$APP/database/database.sqlite" ]]; then
+    cp -p "$APP/database/database.sqlite" "$APP/database/database.sqlite.bak"
+fi
+
 php artisan migrate --force
 php artisan optimize
 

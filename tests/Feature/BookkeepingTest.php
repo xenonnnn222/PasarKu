@@ -323,4 +323,55 @@ class BookkeepingTest extends TestCase
         $this->put('/pengaturan/pin', ['current_pin' => '1234', 'pin' => '5678', 'pin_confirmation' => '5678'])->assertSessionHasNoErrors();
         $this->assertTrue(Hash::check('5678', $user->fresh()->password));
     }
+
+    public function test_sqlite_connection_is_configured_with_wal_and_busy_timeout(): void
+    {
+        $config = config('database.connections.sqlite');
+
+        $this->assertSame(5000, $config['busy_timeout']);
+        $this->assertSame('WAL', $config['journal_mode']);
+        $this->assertSame('NORMAL', $config['synchronous']);
+    }
+
+    public function test_responses_include_owasp_security_headers(): void
+    {
+        $this->get('/login')
+            ->assertOk()
+            ->assertHeader('X-Frame-Options', 'SAMEORIGIN')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    }
+
+    public function test_stock_and_debt_summaries_aggregate_accurately_in_sql(): void
+    {
+        $user = $this->user();
+        $this->product($user, ['name' => 'Cabai', 'stock' => 2.5, 'min_stock' => 3.0, 'buy_price' => 40000]);
+        $this->product($user, ['name' => 'Bawang', 'stock' => 10.0, 'min_stock' => 2.0, 'buy_price' => 25000]);
+        $this->debt($user, ['type' => 'piutang', 'total' => 150000, 'paid' => 50000]);
+        $this->debt($user, ['type' => 'utang', 'total' => 300000, 'paid' => 100000]);
+
+        $this->actingAs($user)
+            ->get('/stok')
+            ->assertOk()
+            ->assertSee('Rp 350.000');
+
+        $this->actingAs($user)
+            ->get('/kasbon')
+            ->assertOk()
+            ->assertSee('Rp 100.000')
+            ->assertSee('Rp 200.000');
+    }
+
+    public function test_abandoned_demo_accounts_older_than_a_day_are_prunable(): void
+    {
+        $oldDemo = User::factory()->create(['is_demo' => true, 'created_at' => now()->subDays(2)]);
+        $freshDemo = User::factory()->create(['is_demo' => true, 'created_at' => now()->subHours(2)]);
+        $realUser = User::factory()->create(['is_demo' => false, 'created_at' => now()->subDays(10)]);
+
+        $this->artisan('model:prune')->assertSuccessful();
+
+        $this->assertDatabaseMissing('users', ['id' => $oldDemo->id]);
+        $this->assertDatabaseHas('users', ['id' => $freshDemo->id]);
+        $this->assertDatabaseHas('users', ['id' => $realUser->id]);
+    }
 }

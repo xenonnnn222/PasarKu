@@ -1,93 +1,91 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
-use App\Support\Bookkeeping;
+use App\Actions\Debt\DeleteDebtAction;
+use App\Actions\Debt\PayDebtAction;
+use App\Actions\Debt\UpdateDebtAction;
+use App\Enums\DebtType;
+use App\Http\Requests\Debt\PayDebtRequest;
+use App\Http\Requests\Debt\SaveDebtRequest;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 class DebtController extends Controller
 {
-    public function index(Request $r)
+    public function index(Request $request): View
     {
-        $data = $r->validate(['q' => 'nullable|string|max:100', 'type' => ['nullable', Rule::in(['piutang', 'utang'])], 'status' => ['nullable', Rule::in(['open', 'paid', 'overdue'])]]);
-        $query = $r->user()->debts()->with(['payments' => fn ($q) => $q->orderByDesc('paid_at')->orderByDesc('id')]);
+        $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'type' => ['nullable', Rule::in(DebtType::values())],
+            'status' => ['nullable', Rule::in(['open', 'paid', 'overdue'])],
+        ]);
+
+        $user = $request->user();
+        $query = $user->debts()->with([
+            'payments' => fn ($q) => $q->orderByDesc('paid_at')->orderByDesc('id'),
+        ]);
+
         if (! empty($data['q'])) {
             $query->where('party', 'like', '%'.$data['q'].'%');
         }
+
         if (! empty($data['type'])) {
             $query->where('type', $data['type']);
         }
+
         if (($data['status'] ?? '') === 'paid') {
             $query->whereColumn('paid', '>=', 'total');
         }
-        if (in_array($data['status'] ?? '', ['open', 'overdue'])) {
+
+        if (in_array($data['status'] ?? '', ['open', 'overdue'], true)) {
             $query->whereColumn('paid', '<', 'total');
         }
+
         if (($data['status'] ?? '') === 'overdue') {
             $query->whereDate('due_date', '<', today());
         }
-        $balances = $r->user()->debts()->get()->groupBy('type')->map(fn ($items) => $items->sum('remaining'));
 
-        return view('debts', ['debts' => $query->orderBy('due_date')->paginate(12)->withQueryString(), 'balances' => $balances]);
+        $balances = $user->debts()
+            ->selectRaw('type, COALESCE(SUM(CASE WHEN total > paid THEN total - paid ELSE 0 END), 0) as remaining_sum')
+            ->groupBy('type')
+            ->pluck('remaining_sum', 'type')
+            ->map(fn (mixed $val): int => (int) $val);
+
+        return view('debts', [
+            'debts' => $query->orderBy('due_date')->paginate(12)->withQueryString(),
+            'balances' => $balances,
+        ]);
     }
 
-    private function data(Request $r): array
+    public function store(SaveDebtRequest $request): RedirectResponse
     {
-        return $r->validate(['type' => ['required', Rule::in(['piutang', 'utang'])], 'party' => 'required|string|max:150', 'phone' => 'nullable|string|max:25', 'total' => 'required|integer|min:1|max:'.Bookkeeping::MAX_MONEY, 'due_date' => 'required|date_format:Y-m-d', 'note' => 'nullable|string|max:1000']);
-    }
-
-    public function store(Request $r)
-    {
-        $r->user()->debts()->create($this->data($r) + ['paid' => 0]);
+        $request->user()->debts()->create($request->validated() + ['paid' => 0]);
 
         return back()->with('success', 'Kasbon berhasil ditambahkan.');
     }
 
-    public function update(Request $r, string $debt)
+    public function update(SaveDebtRequest $request, string $debt, UpdateDebtAction $action): RedirectResponse
     {
-        $data = $this->data($r);
-        DB::transaction(function () use ($r, $debt, $data) {
-            $item = $r->user()->debts()->lockForUpdate()->findOrFail($debt);
-            if ($data['total'] < $item->paid) {
-                throw ValidationException::withMessages(['total' => 'Total tidak boleh lebih kecil dari pembayaran yang sudah dicatat.']);
-            }
-            if ($item->paid > 0 && $item->type !== $data['type']) {
-                throw ValidationException::withMessages(['type' => 'Jenis kasbon yang sudah dibayar tidak dapat diganti.']);
-            }
-            $item->update($data);
-        }, 5);
+        $action->execute($request->user(), $debt, $request->validated());
 
         return back()->with('success', 'Kasbon diperbarui.');
     }
 
-    public function pay(Request $r, string $debt)
+    public function pay(PayDebtRequest $request, string $debt, PayDebtAction $action): RedirectResponse
     {
-        $data = $r->validate(['amount' => 'required|integer|min:1|max:'.Bookkeeping::MAX_MONEY, 'paid_at' => 'required|date_format:Y-m-d', 'note' => 'nullable|string|max:1000']);
-        DB::transaction(function () use ($r, $debt, $data) {
-            $item = $r->user()->debts()->lockForUpdate()->findOrFail($debt);
-            if ($data['amount'] > $item->remaining) {
-                throw ValidationException::withMessages(['amount' => 'Pembayaran melebihi sisa kasbon.']);
-            }
-            $income = $item->type === 'piutang';
-            $tx = $r->user()->transactions()->create(['type' => $income ? 'in' : 'out', 'amount' => $data['amount'], 'category' => $income ? 'Bayar kasbon' : 'Bayar utang', 'note' => ($data['note'] ?? null) ?: 'Pembayaran: '.$item->party, 'occurred_on' => $data['paid_at'], 'debt_id' => $item->id, 'source' => 'debt_payment']);
-            $item->payments()->create($data + ['transaction_id' => $tx->id]);
-            $item->increment('paid', $data['amount']);
-        }, 5);
+        $action->execute($request->user(), $debt, $request->validated());
 
         return back()->with('success', 'Pembayaran tersimpan dan saldo kas diperbarui.');
     }
 
-    public function destroy(Request $r, string $debt)
+    public function destroy(Request $request, string $debt, DeleteDebtAction $action): RedirectResponse
     {
-        DB::transaction(function () use ($r, $debt) {
-            $item = $r->user()->debts()->lockForUpdate()->findOrFail($debt);
-            if ($item->paid > 0) {
-                throw ValidationException::withMessages(['debt' => 'Kasbon dengan pembayaran tidak dapat dihapus agar riwayat kas tetap utuh.']);
-            }$item->delete();
-        }, 5);
+        $action->execute($request->user(), $debt);
 
         return back()->with('success', 'Kasbon dihapus.');
     }
