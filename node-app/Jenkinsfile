@@ -1,17 +1,32 @@
-// Pipeline PasarKu versi Node.js. Buat job Jenkins TERPISAH dari job Laravel:
-//   Branch: */development   Script Path: node-app/Jenkinsfile
+// Pipeline otomatis PasarKu versi Node.js.
+// Buat job Jenkins TERPISAH dari job Laravel:
+//   Tipe: Pipeline · Branch: */development · Script Path: node-app/Jenkinsfile
+// Setiap push ke development: siapkan server → tes → deploy → cek kesehatan.
 pipeline {
     agent any
     options {
         disableConcurrentBuilds()
         timestamps()
+        timeout(time: 20, unit: 'MINUTES')
     }
+    // Pemicu otomatis: centang "GitHub hook trigger for GITScm polling" di konfigurasi job.
     stages {
-        stage('Test & Deploy PasarKu Node') {
-            steps { sh 'bash node-app/deploy/jenkins.sh' }
+        stage('Siapkan server') {
+            steps { sh 'bash node-app/deploy/jenkins.sh provision' }
+        }
+        stage('Tes') {
+            steps { sh 'bash node-app/deploy/jenkins.sh test' }
+        }
+        stage('Deploy') {
+            steps { sh 'bash node-app/deploy/jenkins.sh deploy' }
+        }
+        stage('Cek kesehatan') {
+            steps { sh 'bash node-app/deploy/jenkins.sh health' }
         }
     }
     post {
         always { junit allowEmptyResults: true, testResults: 'node-app/build/junit.xml' }
+        success { echo 'PasarKu Node.js live di /pasarku-node/' }
+        failure { echo 'Deploy gagal. Versi yang sedang berjalan tetap dipakai bila gagal sebelum tahap Deploy.' }
     }
 }

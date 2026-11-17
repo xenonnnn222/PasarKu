@@ -13,58 +13,54 @@ Versi Node.js dipasang **berdampingan** dengan PasarKu Laravel yang sudah live:
 
 Tidak ada file, database, atau konfigurasi Laravel yang diubah.
 
-Alur CI/CD: push ke `development` → Jenkins `pasarku-node` → tes → `rsync` ke `/opt/pasarku-node/app` → restart service (database dicadangkan otomatis) → cek `/healthz`.
+Semua berjalan **otomatis lewat Jenkins**. Setiap push ke `development` menjalankan 4 tahap:
 
-## 1. Siapkan server (sekali saja)
+| Tahap | Perintah | Fungsi |
+|---|---|---|
+| Siapkan server | `jenkins.sh provision` | Memasang/memperbarui Node.js, user `pasarku`, folder, service systemd, dan proxy Apache. Hanya mengubah yang belum sesuai |
+| Tes | `jenkins.sh test` | 22 tes otomatis. Bila gagal, kode dan service di server tidak disentuh. Hasil JUnit di `node-app/build/junit.xml` |
+| Deploy | `jenkins.sh deploy` | `rsync` kode ke `/opt/pasarku-node/app`, lalu restart service. Sebelum start, database dicadangkan otomatis |
+| Cek kesehatan | `jenkins.sh health` | Build gagal bila `/healthz` tidak merespons dalam 20 detik |
 
-Di VPS, ambil branch `development` di folder mana saja (misalnya home Anda), lalu jalankan:
-
-```bash
-git clone -b development https://github.com/xenonnnn222/PasarKu.git ~/pasarku-node-setup
-cd ~/pasarku-node-setup
-sudo bash node-app/deploy/siapkan-server.sh
-```
-
-Bila user Jenkins bukan `jenkins`, beri tahu namanya:
-
-```bash
-sudo JENKINS_USER=nama-user bash node-app/deploy/siapkan-server.sh
-```
-
-Skrip ini:
-
-1. Memasang **Node.js 24** dari repositori resmi NodeSource (bila belum ada Node 22.13+).
-2. Membuat user sistem `pasarku` yang menjalankan aplikasi (tanpa login shell).
-3. Membuat `/opt/pasarku-node/app` (ditulis Jenkins) dan `/var/lib/pasarku-node` (database, hanya user `pasarku`).
-4. Memasang dan mengaktifkan service `pasarku-node` (`deploy/pasarku-node.service`).
-5. Mengizinkan Jenkins menjalankan **hanya** `sudo systemctl restart pasarku-node` (`/etc/sudoers.d/pasarku-node`).
-6. Mengaktifkan modul Apache `proxy`, `proxy_http`, `headers` dan memasang `deploy/apache-pasarku-node.conf`, lalu `configtest` dan reload Apache.
-
-Port **3100** dipakai service. Bila sudah terpakai, ubah `PORT` di `pasarku-node.service`, alamat di `apache-pasarku-node.conf`, dan `HEALTH_URL` di `jenkins.sh`.
-
-## 2. Buat job Jenkins baru
+## 1. Buat job Jenkins (satu-satunya langkah manual)
 
 Jangan mengubah job Laravel yang sudah ada. Buat job baru:
 
 1. **New Item** → nama `pasarku-node` → pilih **Pipeline**.
-2. **Pipeline** → Definition: **Pipeline script from SCM**.
+2. **Build Triggers** → centang **GitHub hook trigger for GITScm polling** (webhook GitHub yang sama dengan job Laravel).
+3. **Pipeline** → Definition: **Pipeline script from SCM**.
    - SCM: Git, Repository URL: `https://github.com/xenonnnn222/PasarKu.git`
    - Branch Specifier: `*/development`
    - Script Path: `node-app/Jenkinsfile`
-3. **Build Triggers** → centang **GitHub hook trigger for GITScm polling**.
-4. Simpan, lalu klik **Build Now** untuk build pertama.
+4. Simpan, lalu klik **Build Now**.
 
-`deploy/jenkins.sh` menjalankan:
+Build pertama memasang semuanya (Node.js 24 dari repositori resmi NodeSource, service, proxy Apache), lalu men-deploy aplikasi. Build berikutnya hanya tes dan deploy, karena tahap "Siapkan server" tidak menemukan perubahan.
 
-| Langkah | Fungsi |
-|---|---|
-| Cek versi Node.js | Gagal jelas bila Node terlalu lama |
-| `node --test` | Tes; bila gagal, server tidak disentuh. Hasil JUnit di `node-app/build/junit.xml` |
-| `rsync --delete` ke `/opt/pasarku-node/app` | Menyalin kode. Database ada di folder lain, jadi tidak terhapus |
-| `sudo systemctl restart pasarku-node` | Menjalankan versi baru. Sebelum start, `scripts/backup-db.js` mencadangkan database |
-| `curl /healthz` | Build gagal bila aplikasi tidak merespons dalam 20 detik |
+### Hak akses Jenkins
 
-## 3. Verifikasi
+Tahap "Siapkan server" butuh root untuk memasang paket, service, dan konfigurasi Apache:
+
+- **Jenkins berjalan sebagai root, atau punya sudo tanpa password:** tidak perlu apa-apa. Skrip Laravel yang sudah ada (`chown www-data`) menunjukkan Jenkins Anda kemungkinan besar sudah punya akses ini.
+- **Jenkins tanpa akses root:** build pertama gagal di tahap "Siapkan server" dengan pesan berisi perintah yang harus dijalankan **sekali** sebagai root di VPS:
+
+  ```bash
+  sudo DEPLOY_USER=jenkins bash /var/lib/jenkins/workspace/pasarku-node/node-app/deploy/siapkan-server.sh
+  ```
+
+  Skrip tersebut juga memberi Jenkins izin terbatas: hanya `systemctl restart pasarku-node`. Setelah itu semua build berjalan otomatis; tahap "Siapkan server" cukup memeriksa (`--check`) tanpa root.
+
+### Yang disiapkan otomatis (`deploy/siapkan-server.sh`)
+
+1. **Node.js 24** dari repositori resmi NodeSource (bila belum ada Node 22.13+), serta `rsync` dan `curl`.
+2. User sistem `pasarku` yang menjalankan aplikasi (tanpa login shell).
+3. `/opt/pasarku-node/app` (ditulis Jenkins) dan `/var/lib/pasarku-node` (database, hanya user `pasarku`).
+4. Service systemd `pasarku-node` (`deploy/pasarku-node.service`).
+5. Izin `systemctl restart pasarku-node` untuk user Jenkins bila bukan root (`/etc/sudoers.d/pasarku-node`).
+6. Modul Apache `proxy`, `proxy_http`, `headers` dan `deploy/apache-pasarku-node.conf`. Apache hanya di-reload bila ada perubahan, dan **hanya setelah `configtest` lulus**. Bila konfigurasi tidak valid, proxy baru dinonaktifkan dan Apache tidak di-reload, jadi Laravel tetap berjalan.
+
+Port **3100** dipakai service. Bila sudah terpakai, ubah `PORT` di `pasarku-node.service`, alamat di `apache-pasarku-node.conf`, dan `HEALTH_URL` di `jenkins.sh`, lalu push. Build berikutnya menerapkan perubahan itu.
+
+## 2. Verifikasi
 
 ```bash
 systemctl status pasarku-node --no-pager
@@ -79,7 +75,7 @@ Log aplikasi:
 sudo journalctl -u pasarku-node -n 100 --no-pager
 ```
 
-## 4. Memindahkan data dari Laravel
+## 3. Memindahkan data dari Laravel
 
 1. Di versi Laravel: **Pengaturan → Unduh cadangan** (file JSON).
 2. Di versi Node.js: daftar akun, lalu **Pengaturan → Impor pembukuan** dengan file tersebut.

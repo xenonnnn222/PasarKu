@@ -79,3 +79,7 @@ test/                tes otomatis (node:test)
 - **Dari versi React lama (localStorage):** buka aplikasi ini di browser dan alamat yang sama, lalu klik **Impor data lama dari browser ini** di Pengaturan.
 
 Impor hanya bisa dilakukan saat pembukuan akun masih kosong.
+
+## Deploy ke VPS
+
+Otomatis lewat Jenkins: setiap push ke branch `development` menyiapkan server, menjalankan tes, men-deploy, dan mengecek kesehatan aplikasi di `/pasarku-node/`, berdampingan dengan versi Laravel. Langkahnya ada di [deploy/README.md](deploy/README.md).
