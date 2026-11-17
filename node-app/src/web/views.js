@@ -1,7 +1,20 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from '../config.js';
 import { escapeHtml as esc } from '../security.js';
 import { formatDate, rupiah } from '../domain.js';
 
 export { esc, rupiah, formatDate };
+
+/** Versi aset dari waktu ubah file, agar browser mengambil CSS/JS baru setelah deploy. */
+function assetUrl(relative) {
+  try {
+    const mtime = fs.statSync(path.join(config.publicDir, relative)).mtimeMs;
+    return `/${relative}?v=${Math.floor(mtime).toString(36)}`;
+  } catch {
+    return `/${relative}`;
+  }
+}
 
 const NAV = [
   ['/', 'Beranda'],
@@ -105,7 +118,7 @@ export function layout(ctx, { title, subtitle = 'Catatan rapi, usaha lebih pasti
   const user = ctx.user;
   const theme = user?.theme ?? 'light';
   const font = user?.font_size ?? 'normal';
-  const head = `<!doctype html><html lang="id" data-theme="${esc(theme)}" data-font="${esc(font)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Pembukuan sederhana untuk pedagang pasar."><title>${esc(title)} · PasarKu</title><link rel="icon" href="/icons/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/css/app.css"><script defer src="/js/app.js"></script></head>`;
+  const head = `<!doctype html><html lang="id" data-theme="${esc(theme)}" data-font="${esc(font)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Pembukuan sederhana untuk pedagang pasar."><title>${esc(title)} · PasarKu</title><link rel="icon" href="/icons/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="${assetUrl('css/app.css')}"><script defer src="${assetUrl('js/app.js')}"></script></head>`;
 
   if (!user) {
     return `${head}<body class="guest-shell"><a class="skip-link" href="#main">Lewati ke konten</a><main id="main">${body}</main></body></html>`;

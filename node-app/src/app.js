@@ -1,24 +1,59 @@
+import { config } from './config.js';
 import { HttpError, ValidationError } from './errors.js';
 import { sessionUser } from './services/accounts.js';
 import { RateLimiter, randomToken, safeEqual } from './security.js';
-import { backPath, cookie, decodeFlash, encodeFlash, parseCookies, readForm, send, serveStatic } from './web/http.js';
+import {
+  backPath,
+  clientIp,
+  cookie,
+  decodeFlash,
+  encodeFlash,
+  parseCookies,
+  prefixHtml,
+  readForm,
+  send,
+  serveStatic,
+} from './web/http.js';
 import { errorPage } from './web/pages.js';
 import { matchRoute } from './web/routes.js';
 
 const STATIC_PREFIXES = ['/css/', '/js/', '/icons/'];
 const HTML = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' };
 
-/** Membuat handler HTTP untuk satu database. Dipakai oleh server dan tes. */
-export function createApp({ db, limiter = new RateLimiter(10, 15 * 60 * 1000) }) {
+/**
+ * Membuat handler HTTP untuk satu database. Dipakai oleh server dan tes.
+ * basePath: sub-path di belakang reverse proxy, misalnya '/pasarku-node'.
+ */
+export function createApp({
+  db,
+  limiter = new RateLimiter(10, 15 * 60 * 1000),
+  basePath = config.basePath,
+  trustProxy = config.trustProxy,
+}) {
+  const cookiePath = basePath || '/';
+
   return async function handle(req, res) {
     const setCookies = [];
-    const ctx = { db, req, limiter, setCookies, user: null, flash: null, csrf: '' };
+    const ctx = {
+      db,
+      req,
+      limiter,
+      setCookies,
+      basePath,
+      cookiePath,
+      ip: clientIp(req, trustProxy),
+      user: null,
+      flash: null,
+      csrf: '',
+    };
 
     const headers = (extra = {}) => (setCookies.length ? { ...extra, 'Set-Cookie': setCookies } : extra);
     const redirect = (location, flash) => {
-      if (flash) setCookies.push(cookie('flash', encodeFlash(...flash), { maxAge: 60 }));
-      send(res, 303, '', headers({ Location: location }));
+      if (flash) setCookies.push(cookie('flash', encodeFlash(...flash), { maxAge: 60, path: cookiePath }));
+      const target = location.startsWith('/') ? `${basePath}${location}` : location;
+      send(res, 303, '', headers({ Location: target }));
     };
+    const back = (fallback) => backPath(req, fallback ?? '/', basePath);
 
     try {
       const url = new URL(req.url, 'http://localhost');
@@ -29,17 +64,23 @@ export function createApp({ db, limiter = new RateLimiter(10, 15 * 60 * 1000) })
         return;
       }
 
+      if (url.pathname === '/healthz') {
+        db.prepare('SELECT 1').get();
+        send(res, 200, 'ok', { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        return;
+      }
+
       const cookies = parseCookies(req.headers.cookie);
       ctx.cookies = cookies;
 
       // Token CSRF pola double-submit: cookie dan field formulir harus sama.
       ctx.csrf = /^[\w-]{30,}$/.test(cookies.csrf ?? '') ? cookies.csrf : randomToken();
       if (ctx.csrf !== cookies.csrf) {
-        setCookies.push(cookie('csrf', ctx.csrf, { httpOnly: false, maxAge: 60 * 60 * 24 * 7 }));
+        setCookies.push(cookie('csrf', ctx.csrf, { httpOnly: false, maxAge: 60 * 60 * 24 * 7, path: cookiePath }));
       }
 
       ctx.flash = decodeFlash(cookies.flash);
-      if (cookies.flash) setCookies.push(cookie('flash', '', { maxAge: 0 }));
+      if (cookies.flash) setCookies.push(cookie('flash', '', { maxAge: 0, path: cookiePath }));
 
       ctx.body = await readForm(req);
       ctx.query = Object.fromEntries(url.searchParams);
@@ -62,7 +103,7 @@ export function createApp({ db, limiter = new RateLimiter(10, 15 * 60 * 1000) })
       if (method !== 'GET') {
         const token = String(ctx.body._token ?? '');
         if (!cookies.csrf || !token || !safeEqual(token, cookies.csrf)) {
-          redirect(backPath(req, route.fallback ?? '/'), ['error', 'Sesi formulir kedaluwarsa. Silakan coba lagi.']);
+          redirect(back(route.fallback), ['error', 'Sesi formulir kedaluwarsa. Silakan coba lagi.']);
           return;
         }
       }
@@ -85,17 +126,15 @@ export function createApp({ db, limiter = new RateLimiter(10, 15 * 60 * 1000) })
           'Cache-Control': 'no-store',
         }));
       } else if (result.redirect || result.back) {
-        redirect(result.redirect ?? backPath(req, route.fallback ?? '/'), result.flash);
+        redirect(result.redirect ?? back(route.fallback), result.flash);
       } else {
-        send(res, result.status ?? 200, result.html, headers(HTML));
+        send(res, result.status ?? 200, prefixHtml(result.html, basePath), headers(HTML));
       }
     } catch (error) {
       if (res.headersSent) return;
 
       if (error instanceof ValidationError) {
-        const target = ctx.route && ctx.route.method === 'GET'
-          ? ctx.route.fallback ?? '/'
-          : backPath(req, ctx.route?.fallback ?? '/');
+        const target = ctx.route && ctx.route.method === 'GET' ? ctx.route.fallback ?? '/' : back(ctx.route?.fallback);
         redirect(target, ['error', error.message]);
         return;
       }
@@ -103,7 +142,8 @@ export function createApp({ db, limiter = new RateLimiter(10, 15 * 60 * 1000) })
       const status = error instanceof HttpError ? error.status : 500;
       if (status === 500) console.error(error);
       const message = status === 500 ? 'Terjadi kesalahan pada server. Silakan coba lagi.' : error.message;
-      send(res, status, errorPage({ ...ctx, url: ctx.url ?? new URL('http://localhost/'), flash: null }, status, message), headers(HTML));
+      const page = errorPage({ ...ctx, url: ctx.url ?? new URL('http://localhost/'), flash: null }, status, message);
+      send(res, status, prefixHtml(page, basePath), headers(HTML));
     }
   };
 }

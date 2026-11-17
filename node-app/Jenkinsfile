@@ -1,0 +1,17 @@
+// Pipeline PasarKu versi Node.js. Buat job Jenkins TERPISAH dari job Laravel:
+//   Branch: */development   Script Path: node-app/Jenkinsfile
+pipeline {
+    agent any
+    options {
+        disableConcurrentBuilds()
+        timestamps()
+    }
+    stages {
+        stage('Test & Deploy PasarKu Node') {
+            steps { sh 'bash node-app/deploy/jenkins.sh' }
+        }
+    }
+    post {
+        always { junit allowEmptyResults: true, testResults: 'node-app/build/junit.xml' }
+    }
+}

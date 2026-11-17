@@ -1,0 +1,35 @@
+# Service systemd untuk PasarKu versi Node.js.
+# Dipasang oleh deploy/siapkan-server.sh ke /etc/systemd/system/pasarku-node.service
+[Unit]
+Description=PasarKu (Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=pasarku
+Group=pasarku
+WorkingDirectory=/opt/pasarku-node/app
+
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3100
+Environment=BASE_PATH=/pasarku-node
+Environment=SECURE_COOKIES=true
+Environment=TRUST_PROXY=true
+Environment=DB_PATH=/var/lib/pasarku-node/pasarku.sqlite
+
+# Salin database sebelum setiap start/restart (deploy).
+ExecStartPre=/usr/bin/node scripts/backup-db.js
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=3
+
+# Pembatasan: aplikasi hanya boleh menulis ke folder database.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/pasarku-node
+
+[Install]
+WantedBy=multi-user.target

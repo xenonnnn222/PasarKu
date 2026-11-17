@@ -35,3 +35,4 @@ form.inline{display:inline}
 .notice.error{border-color:var(--red);color:var(--red)}
 .notice.success{border-color:var(--green)}
 @media (max-width:767px){.data-table th:nth-child(3),.data-table td:nth-child(3){display:none}.chart{gap:5px}}
+.debt-card .stats>div small{display:block;color:var(--muted)}

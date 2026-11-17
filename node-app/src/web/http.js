@@ -50,8 +50,8 @@ export function parseCookies(header) {
   return cookies;
 }
 
-export function cookie(name, value, { maxAge, httpOnly = true } = {}) {
-  let s = `${name}=${encodeURIComponent(value)}; Path=/; SameSite=Lax`;
+export function cookie(name, value, { maxAge, httpOnly = true, path = '/' } = {}) {
+  let s = `${name}=${encodeURIComponent(value)}; Path=${path}; SameSite=Lax`;
   if (httpOnly) s += '; HttpOnly';
   if (maxAge !== undefined) s += `; Max-Age=${maxAge}`;
   if (config.secureCookies) s += '; Secure';
@@ -95,15 +95,44 @@ export function serveStatic(res, pathname) {
   fs.createReadStream(file).pipe(res);
 }
 
-/** Path tujuan kembali: Referer dari situs sendiri, atau fallback. */
-export function backPath(req, fallback) {
+/**
+ * Path tujuan kembali (tanpa BASE_PATH): Referer dari situs sendiri, atau fallback.
+ */
+export function backPath(req, fallback, basePath = '') {
   const referer = req.headers.referer;
   if (!referer) return fallback;
   try {
     const url = new URL(referer);
-    if (url.host === req.headers.host) return url.pathname + url.search;
+    if (url.host !== req.headers.host) return fallback;
+
+    let pathname = url.pathname;
+    if (basePath) {
+      if (pathname !== basePath && !pathname.startsWith(`${basePath}/`)) return fallback;
+      pathname = pathname.slice(basePath.length) || '/';
+    }
+    return pathname + url.search;
   } catch {
-    // abaikan
+    return fallback;
   }
-  return fallback;
+}
+
+/** IP pengguna. Di belakang proxy, ambil entri terakhir X-Forwarded-For (ditambahkan proxy kita). */
+export function clientIp(req, trustProxy) {
+  if (trustProxy) {
+    const forwarded = String(req.headers['x-forwarded-for'] ?? '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (forwarded.length) return forwarded[forwarded.length - 1];
+  }
+  return req.socket.remoteAddress ?? 'unknown';
+}
+
+/**
+ * Menambahkan BASE_PATH ke semua tautan internal (href, action, src yang diawali "/").
+ * Konten pengguna sudah di-escape, sehingga tidak bisa menghasilkan atribut baru.
+ */
+export function prefixHtml(html, basePath) {
+  if (!basePath) return html;
+  return html.replace(/(\s(?:href|action|src)=")\/(?!\/)/g, `$1${basePath}/`);
 }

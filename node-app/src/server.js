@@ -11,7 +11,7 @@ setInterval(() => pruneDemoUsers(db), 60 * 60 * 1000).unref();
 const server = http.createServer(createApp({ db }));
 
 server.listen(config.port, config.host, () => {
-  console.log(`PasarKu berjalan di http://${config.host}:${config.port}`);
+  console.log(`PasarKu berjalan di http://${config.host}:${config.port}${config.basePath}/`);
   console.log(`Database: ${config.dbPath}`);
 });
 

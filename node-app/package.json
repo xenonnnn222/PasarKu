@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "backup": "node scripts/backup-db.js",
     "test": "node --test"
   }
 }

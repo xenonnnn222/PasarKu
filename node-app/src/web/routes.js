@@ -50,12 +50,11 @@ const ok = (message) => ['success', message];
 function startSession(ctx, userId) {
   destroySession(ctx.db, ctx.cookies.sid);
   const sid = createSession(ctx.db, userId);
-  ctx.setCookies.push(cookie('sid', sid, { maxAge: config.sessionMinutes * 60 }));
+  ctx.setCookies.push(cookie('sid', sid, { maxAge: config.sessionMinutes * 60, path: ctx.cookiePath }));
 }
 
 function throttle(ctx, action) {
-  const ip = ctx.req.socket.remoteAddress ?? 'unknown';
-  if (!ctx.limiter.allow(`${action}:${ip}`)) {
+  if (!ctx.limiter.allow(`${action}:${ctx.ip}`)) {
     fail('Terlalu banyak percobaan. Coba lagi beberapa menit lagi.', 'form');
   }
 }
@@ -100,7 +99,7 @@ export const routes = [
     method: 'POST', path: '/logout', auth: 'user',
     handler: (ctx) => {
       destroySession(ctx.db, ctx.cookies.sid);
-      ctx.setCookies.push(cookie('sid', '', { maxAge: 0 }));
+      ctx.setCookies.push(cookie('sid', '', { maxAge: 0, path: ctx.cookiePath }));
       return { redirect: '/login' };
     },
   },
