@@ -1,0 +1,14 @@
+{
+  "name": "pasarku-node",
+  "version": "2.0.0",
+  "private": true,
+  "description": "PasarKu: pembukuan pedagang pasar (Node.js, tanpa dependensi eksternal)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  }
+}
