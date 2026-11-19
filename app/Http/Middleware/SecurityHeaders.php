@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Support\InlineCss;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -11,12 +12,13 @@ use Symfony\Component\HttpFoundation\Response;
 class SecurityHeaders
 {
     /**
-     * Semua skrip dan stylesheet berasal dari aplikasi sendiri; tidak ada style/script inline.
+     * Semua skrip berasal dari aplikasi sendiri; tidak ada script atau atribut style inline.
+     * Satu-satunya <style> adalah isi app.css (App\Support\InlineCss), diizinkan lewat hash-nya.
      * Grafik dan progress bar memakai kelas .w-N / .h-N di app.css, bukan atribut style.
      */
     private const CONTENT_SECURITY_POLICY = "default-src 'self'; "
         ."script-src 'self'; "
-        ."style-src 'self'; "
+        ."style-src 'self' {style-hash}; "
         ."img-src 'self' data:; "
         ."font-src 'self'; "
         ."connect-src 'self'; "
@@ -32,7 +34,7 @@ class SecurityHeaders
     {
         $response = $next($request);
 
-        $response->headers->set('Content-Security-Policy', self::CONTENT_SECURITY_POLICY);
+        $response->headers->set('Content-Security-Policy', str_replace('{style-hash}', InlineCss::hashSource(), self::CONTENT_SECURITY_POLICY));
         $response->headers->set('X-Frame-Options', 'SAMEORIGIN');
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');

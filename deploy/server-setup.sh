@@ -19,11 +19,17 @@ warn() { echo "[server-setup] PERINGATAN: $*" >&2; }
 [[ $EUID -eq 0 ]] || { echo 'server-setup.sh butuh root.' >&2; exit 1; }
 [[ -d $APP ]] || { log "$APP belum ada; lewati."; exit 0; }
 
+# Website dianggap sehat bila /pasarku/login membalas 200, lewat domain publik atau lewat
+# 127.0.0.1 (VirtualHost bisa terikat ke IP publik, jadi keduanya dicoba).
 site_ok() {
     local code
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
-        --resolve dragonfruitdevops.web.id:443:127.0.0.1 https://dragonfruitdevops.web.id/pasarku/login || true)
-    [[ $code == 200 ]]
+    for opt in '' '--resolve dragonfruitdevops.web.id:443:127.0.0.1'; do
+        # shellcheck disable=SC2086
+        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 $opt https://dragonfruitdevops.web.id/pasarku/login || true)
+        [[ $code == 200 ]] && return 0
+    done
+    echo "[server-setup] cek website: HTTP $code" >&2
+    return 1
 }
 
 # 1. Skrip root disalin ke /usr/local (milik root), bukan dijalankan dari folder website
@@ -114,7 +120,7 @@ if ! cmp -s "$HERE/apache-pasarku.conf" "$APACHE_CONF"; then
     backup="$APACHE_CONF.bak-$(date +%Y%m%d%H%M%S)"
     [[ -f $APACHE_CONF ]] && cp -p "$APACHE_CONF" "$backup"
     install -m 0644 "$HERE/apache-pasarku.conf" "$APACHE_CONF"
-    a2enmod -q rewrite proxy_fcgi setenvif
+    a2enmod -q rewrite proxy_fcgi setenvif headers
     a2enconf -q pasarku
     if apache2ctl configtest && systemctl reload apache2 && sleep 2 && site_ok; then
         log "Apache diperbarui (cadangan: $backup)."

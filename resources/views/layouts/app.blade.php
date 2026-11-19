@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="id" data-theme="{{ auth()->user()?->theme ?? 'light' }}" data-font="{{ auth()->user()?->font_size ?? 'normal' }}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Pembukuan sederhana untuk pedagang pasar: transaksi, kasbon, stok, dan laporan usaha."><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title', 'Beranda') · PasarKu</title><link rel="icon" href="{{ asset('icons/icon.svg') }}" type="image/svg+xml"><link rel="stylesheet" href="{{ asset('css/app.css') }}?v={{ filemtime(public_path('css/app.css')) }}"><script defer src="{{ asset('js/app.js') }}?v={{ filemtime(public_path('js/app.js')) }}"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Pembukuan sederhana untuk pedagang pasar: transaksi, kasbon, stok, dan laporan usaha."><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title', 'Beranda') · PasarKu</title><link rel="icon" href="{{ asset('icons/icon.svg') }}" type="image/svg+xml"><style>{!! \App\Support\InlineCss::content() !!}</style><script defer src="{{ asset('js/app.js') }}?v={{ filemtime(public_path('js/app.js')) }}"></script></head>
 <body class="{{ auth()->check() ? 'app-shell' : 'guest-shell' }}">
 <a class="skip-link" href="#main">Lewati ke konten</a>
 @auth

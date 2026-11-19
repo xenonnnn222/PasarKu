@@ -90,23 +90,36 @@ class AdminAndHardeningTest extends TestCase
         $this->artisan('pasarku:role', ['phone' => '081277778888', 'role' => 'superuser'])->assertFailed();
     }
 
-    public function test_csp_has_no_unsafe_inline_and_pages_have_no_inline_styles(): void
+    public function test_csp_has_no_unsafe_inline_and_only_hashed_styles_are_allowed(): void
     {
         $csp = (string) $this->get('/login')->headers->get('Content-Security-Policy');
         $this->assertStringNotContainsString('unsafe-inline', $csp);
-        $this->assertStringContainsString("style-src 'self'", $csp);
+        $this->assertStringContainsString("style-src 'self' 'sha256-", $csp);
 
         $user = User::factory()->create();
         app(DemoData::class)->populate($user);
         $this->actingAs($user);
-        foreach (['/', '/riwayat', '/kasbon', '/stok', '/laporan', '/pengaturan'] as $url) {
-            $html = $this->get($url)->assertOk()->getContent();
+        foreach (['/', '/riwayat', '/kasbon', '/stok', '/laporan', '/pengaturan', '/admin'] as $url) {
+            if ($url === '/admin') {
+                $user->forceFill(['role' => UserRole::Admin])->save();
+            }
+            $response = $this->get($url);
+            $html = $response->assertOk()->getContent();
             $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html, $url);
-            $this->assertStringNotContainsString('<style', $html, $url);
+            $this->assertStyleBlocksMatchCsp($html, (string) $response->headers->get('Content-Security-Policy'), $url);
         }
 
         $notFound = $this->get('/halaman-yang-tidak-ada')->assertNotFound();
-        $this->assertStringNotContainsString('<style', $notFound->getContent());
         $notFound->assertSee('Halaman tidak ditemukan');
+        $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $notFound->getContent());
+    }
+
+    private function assertStyleBlocksMatchCsp(string $html, string $csp, string $url): void
+    {
+        preg_match_all('#<style>(.*?)</style>#s', $html, $blocks);
+        $this->assertCount(1, $blocks[1], $url);
+        foreach ($blocks[1] as $css) {
+            $this->assertStringContainsString("'sha256-".base64_encode(hash('sha256', $css, true))."'", $csp, $url);
+        }
     }
 }
