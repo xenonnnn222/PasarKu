@@ -339,7 +339,40 @@ class BookkeepingTest extends TestCase
             ->assertOk()
             ->assertHeader('X-Frame-Options', 'SAMEORIGIN')
             ->assertHeader('X-Content-Type-Options', 'nosniff')
-            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+            ->assertHeader('Permissions-Policy')
+            ->assertHeaderMissing('Strict-Transport-Security');
+
+        $csp = $this->get('/login')->headers->get('Content-Security-Policy');
+        $this->assertStringContainsString("script-src 'self'", $csp);
+        $this->assertStringContainsString("object-src 'none'", $csp);
+        $this->assertStringContainsString("frame-ancestors 'self'", $csp);
+
+        $this->get('https://localhost/login')->assertHeader('Strict-Transport-Security', 'max-age=31536000');
+    }
+
+    public function test_session_expires_after_thirty_idle_minutes(): void
+    {
+        $this->assertSame(30, config('session.lifetime'));
+    }
+
+    public function test_login_logout_and_failed_login_are_written_to_security_log(): void
+    {
+        $log = storage_path('logs/security-test.log');
+        @unlink($log);
+        config(['logging.channels.security.path' => $log]);
+        $user = User::factory()->create(['phone' => '081234567890']);
+
+        $this->post('/login', ['phone' => '081234567890', 'pin' => '9999'])->assertSessionHasErrors('phone');
+        $this->post('/login', ['phone' => '081234567890', 'pin' => '1234'])->assertRedirect(route('home'));
+        $this->post('/logout')->assertRedirect(route('login'));
+
+        $content = (string) file_get_contents($log);
+        @unlink($log);
+        $this->assertSame(1, substr_count($content, 'Login gagal phone=0812*****890 ip=127.0.0.1'));
+        $this->assertStringNotContainsString('081234567890', $content);
+        $this->assertSame(1, substr_count($content, 'Login berhasil {"user_id":'.$user->id));
+        $this->assertSame(1, substr_count($content, 'Logout {"user_id":'.$user->id));
     }
 
     public function test_stock_and_debt_summaries_aggregate_accurately_in_sql(): void

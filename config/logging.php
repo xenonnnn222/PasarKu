@@ -126,6 +126,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Login, logout, dan login gagal (app/Listeners/LogAuthenticationEvents.php).
+        // Satu file tetap agar bisa dibaca Fail2Ban; rotasi oleh logrotate di server.
+        'security' => [
+            'driver' => 'single',
+            'path' => env('LOG_SECURITY_PATH', storage_path('logs/security.log')),
+            'level' => 'info',
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

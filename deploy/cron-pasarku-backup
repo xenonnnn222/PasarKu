@@ -1,0 +1,4 @@
+# Backup harian database PasarKu + uji pemulihan (dipasang oleh deploy/jenkins.sh).
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 2 * * * root bash /var/www/html/pasarku/deploy/backup-db.sh >>/var/log/pasarku-backup.log 2>&1
