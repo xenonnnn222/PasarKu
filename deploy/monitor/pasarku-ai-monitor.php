@@ -153,7 +153,8 @@ if ($export) {
 }
 
 if ($record) {
-    $payload = json_decode((string) stream_get_contents(STDIN), true);
+    // Abaikan BOM UTF-8 yang kadang ditambahkan PowerShell saat mengirim lewat pipe.
+    $payload = json_decode(preg_replace('/^\xEF\xBB\xBF/', '', (string) stream_get_contents(STDIN)), true);
     $result = pasarku_ai_clean($payload['result'] ?? null);
     if ($result === null) {
         pasarku_write_log($logFile, 'GAGAL: hasil dari laptop tidak sesuai skema.');

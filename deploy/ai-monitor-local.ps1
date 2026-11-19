@@ -76,44 +76,55 @@ try {
     $body = @{
         model = $Model
         stream = $false
-        max_tokens = 4000
+        max_tokens = 16000
         temperature = 0
         messages = @(
-            @{ role = 'system'; content = $export.system + ' Jawab HANYA dengan satu objek JSON valid (tanpa markdown) yang sesuai JSON Schema berikut: ' + $schemaJson }
+            @{ role = 'system'; content = $export.system + ' Ringkas: maksimal 5 temuan (evidence satu kalimat) dan maksimal 5 tindakan. Jawab HANYA dengan satu objek JSON valid (tanpa markdown) yang sesuai JSON Schema berikut: ' + $schemaJson }
             @{ role = 'user'; content = $export.report }
         )
     }
     $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-AsciiJson $body))
-    $resp = Invoke-WebRequest -Uri "$BaseUrl/chat/completions" -Method Post -UseBasicParsing -TimeoutSec 240 `
-        -Headers @{ Authorization = "Bearer $apiKey" } -ContentType 'application/json; charset=utf-8' -Body $bytes
-    $reader = New-Object IO.StreamReader($resp.RawContentStream, [Text.Encoding]::UTF8)
-    $raw = $reader.ReadToEnd()
-    if ($raw.TrimStart().StartsWith('data:')) {
-        # Sebagian provider di 9router tetap menjawab streaming (SSE): gabungkan potongan delta.content.
-        $chat = $null; $text = ''
-        foreach ($l in ($raw -split "`n")) {
-            $l = $l.Trim()
-            if (-not $l.StartsWith('data:') -or $l -eq 'data: [DONE]') { continue }
-            $chunk = $l.Substring(5).Trim() | ConvertFrom-Json
-            if (-not $chat) { $chat = $chunk }
-            $text += [string]$chunk.choices[0].delta.content
+    $result = $null
+    for ($attempt = 1; $attempt -le 2 -and -not $result; $attempt++) {
+        try {
+            $resp = Invoke-WebRequest -Uri "$BaseUrl/chat/completions" -Method Post -UseBasicParsing -TimeoutSec 240 `
+                -Headers @{ Authorization = "Bearer $apiKey" } -ContentType 'application/json; charset=utf-8' -Body $bytes
+            $reader = New-Object IO.StreamReader($resp.RawContentStream, [Text.Encoding]::UTF8)
+            $raw = $reader.ReadToEnd()
+            if ($raw.TrimStart().StartsWith('data:')) {
+                # Sebagian provider di 9router tetap menjawab streaming (SSE): gabungkan potongan delta.content.
+                $chat = $null; $text = ''
+                foreach ($l in ($raw -split "`n")) {
+                    $l = $l.Trim()
+                    if (-not $l.StartsWith('data:') -or $l -eq 'data: [DONE]') { continue }
+                    $chunk = $l.Substring(5).Trim() | ConvertFrom-Json
+                    if (-not $chat) { $chat = $chunk }
+                    $text += [string]$chunk.choices[0].delta.content
+                }
+            }
+            else {
+                $chat = $raw | ConvertFrom-Json
+                $text = [string]$chat.choices[0].message.content
+            }
+
+            # Ambil objek JSON dari jawaban (abaikan pagar ```json bila ada).
+            $start = $text.IndexOf('{'); $end = $text.LastIndexOf('}')
+            if ($start -lt 0 -or $end -le $start) { throw 'Jawaban AI tidak berisi JSON.' }
+            $result = $text.Substring($start, $end - $start + 1) | ConvertFrom-Json
+        }
+        catch {
+            if ($attempt -ge 2) { throw }
+            Write-Log "Percobaan $attempt gagal ($($_.Exception.Message.Substring(0, [Math]::Min(120, $_.Exception.Message.Length)))), mengulang..."
         }
     }
-    else {
-        $chat = $raw | ConvertFrom-Json
-        $text = [string]$chat.choices[0].message.content
-    }
-
-    # Ambil objek JSON dari jawaban (abaikan pagar ```json bila ada).
-    $start = $text.IndexOf('{'); $end = $text.LastIndexOf('}')
-    if ($start -lt 0 -or $end -le $start) { throw 'Jawaban AI tidak berisi JSON.' }
-    $result = $text.Substring($start, $end - $start + 1) | ConvertFrom-Json
     if (@('rendah', 'sedang', 'tinggi') -notcontains $result.risk) { throw "Nilai risk tidak valid: $($result.risk)" }
 
     # 3. Catat di server (server memvalidasi ulang terhadap skema)
     $usedModel = if ($chat.model) { [string]$chat.model } else { $Model }
     $payload = ConvertTo-AsciiJson @{ model = $usedModel; result = $result }
-    $stored = ($payload | & ssh @sshOpts $target "$Remote --record") -join "`n"
+    # Dikirim sebagai base64 di baris perintah, bukan lewat pipe: pipe PowerShell bisa menambah BOM/CRLF.
+    $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+    $stored = (& ssh @sshOpts $target "echo $b64 | base64 -d | $Remote --record") -join "`n"
     if ($LASTEXITCODE -ne 0) { throw "ssh --record gagal (kode $LASTEXITCODE)." }
 
     Write-Log ("OK " + ($stored -split "`n")[0])
