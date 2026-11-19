@@ -31,7 +31,7 @@ class AuditLog extends Model
      */
     public static function record(?User $actor, string $action, ?User $target = null, array $details = []): self
     {
-        $ip = app()->runningInConsole() ? 'cli' : request()->ip();
+        $ip = request()->route() !== null ? request()->ip() : 'cli';
 
         $entry = self::create([
             'actor_id' => $actor?->id,

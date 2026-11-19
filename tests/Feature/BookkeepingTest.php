@@ -37,7 +37,7 @@ class BookkeepingTest extends TestCase
     public function test_guests_are_redirected_and_login_is_server_rendered(): void
     {
         $this->get('/')->assertRedirect(route('login'));
-        $this->get('/login')->assertOk()->assertSee('Masuk ke ruang usaha')->assertSee('name="_token"', false)->assertSee('/css/app.css', false);
+        $this->get('/login')->assertOk()->assertSee('Masuk ke ruang usaha')->assertSee('name="_token"', false)->assertSee('<style>', false);
         $this->get('/mulai')->assertOk()->assertSee('Kenali uang Anda.');
         $this->get('/up')->assertOk();
     }
