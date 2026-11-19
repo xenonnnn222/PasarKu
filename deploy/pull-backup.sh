@@ -15,7 +15,7 @@ SSH=(ssh -p "$PORT" -o BatchMode=yes -o ConnectTimeout=20 "$USER_NAME@$SERVER")
 mkdir -p "$DEST"
 cd "$DEST"
 new=0
-for name in $("${SSH[@]}" "ls -1 $REMOTE/pasarku-*.sqlite.gz 2>/dev/null | xargs -r -n1 basename"); do
+for name in $("${SSH[@]}" "for f in $REMOTE/pasarku-*.sqlite.gz; do [ -f \"\$f.sha256\" ] && basename \"\$f\"; done; true"); do
     [[ $name =~ ^pasarku-[0-9]{8}-[0-9]{6}\.sqlite\.gz$ && ! -f $name ]] || continue
     scp -P "$PORT" -o BatchMode=yes -q "$USER_NAME@$SERVER:$REMOTE/$name" "$USER_NAME@$SERVER:$REMOTE/$name.sha256" .
     if sha256sum -c --quiet "$name.sha256" && gzip -t "$name"; then

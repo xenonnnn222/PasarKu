@@ -41,11 +41,12 @@ function Write-Log([string]$msg) {
     Write-Output $line
 }
 
-$sshOpts = @('-p', "$Port", '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20')
+$sshOpts = @('-p', "$Port", '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=ERROR')
 $target = "$User@$Server"
 
 try {
-    $listing = & ssh @sshOpts $target "ls -1 $RemoteDir/pasarku-*.sqlite.gz 2>/dev/null | xargs -r -n1 basename"
+    # Hanya backup yang punya checksum .sha256 (backup lama sebelum fitur ini dilewati).
+    $listing = & ssh @sshOpts $target "for f in $RemoteDir/pasarku-*.sqlite.gz; do [ -f `"`$f.sha256`" ] && basename `"`$f`"; done; true"
     if ($LASTEXITCODE -ne 0) { throw "ssh gagal (kode $LASTEXITCODE). Pastikan SSH key terpasang dan port $Port terbuka." }
     $names = @($listing | Where-Object { $_ -match '^pasarku-\d{8}-\d{6}\.sqlite\.gz$' })
     if ($names.Count -eq 0) { throw 'Tidak ada file backup di server.' }
@@ -55,7 +56,7 @@ try {
         $local = Join-Path $Dest $name
         if (Test-Path $local) { continue }
 
-        & scp -P "$Port" -o BatchMode=yes -q "${target}:$RemoteDir/$name" "${target}:$RemoteDir/$name.sha256" "$Dest"
+        & scp -P "$Port" -o BatchMode=yes -o LogLevel=ERROR -q "${target}:$RemoteDir/$name" "${target}:$RemoteDir/$name.sha256" "$Dest"
         if ($LASTEXITCODE -ne 0) { throw "scp $name gagal (kode $LASTEXITCODE)." }
 
         $expected = ((Get-Content (Join-Path $Dest "$name.sha256") -Raw).Trim() -split '\s+')[0].ToLower()
