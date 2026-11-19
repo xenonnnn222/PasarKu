@@ -71,7 +71,7 @@ if [[ ! -f /etc/default/pasarku-monitor ]]; then
     install -m 0600 /dev/null /etc/default/pasarku-monitor
     cat >/etc/default/pasarku-monitor <<'CFG'
 # Pengaturan monitoring PasarKu (deploy/monitor). File ini milik root, mode 600.
-# G6 (analisis AI): isi API key Claude agar pasarku-ai-monitor aktif.
+# G6 (analisis AI): dijalankan dari laptop (deploy/ai-monitor-local.ps1 + 9router), atau isi API key Claude agar server memanggil Claude API langsung.
 #ANTHROPIC_API_KEY=
 #PASARKU_AI_MODEL=claude-opus-5-5
 #AI_WINDOW_HOURS=6
@@ -221,9 +221,11 @@ audit() { echo "[audit] $*"; }
 
     audit '--- G6 monitoring AI ---'
     if grep -q '^ANTHROPIC_API_KEY=.\+' /etc/default/pasarku-monitor 2>/dev/null; then
-        audit 'API key: terisi'
+        audit 'mode: server -> Claude API (API key terisi)'
+    elif [[ -f /var/lib/pasarku/ai-monitor-last.json ]]; then
+        audit "mode: laptop pemilik (9router), hasil terakhir $(date -r /var/lib/pasarku/ai-monitor-last.json '+%Y-%m-%d %H:%M %Z')"
     else
-        audit 'API key: belum diisi'
+        audit 'mode: belum aktif (jalankan deploy/ai-monitor-local.ps1 di laptop atau isi ANTHROPIC_API_KEY)'
     fi
     tail -1 /var/log/pasarku-ai-monitor.log 2>/dev/null | sed 's/^/[audit] ai: /' || true
 

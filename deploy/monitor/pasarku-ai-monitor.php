@@ -1,12 +1,19 @@
 <?php
 
 /*
- * Monitoring log keamanan PasarKu menggunakan AI / Claude API (checklist OWASP G6).
- * Dipasang oleh deploy/server-setup.sh ke /usr/local/lib/pasarku/ dan dijalankan cron tiap 6 jam:
- *   php /usr/local/lib/pasarku/pasarku-ai-monitor.php            kirim ke Claude, simpan hasil
- *   php /usr/local/lib/pasarku/pasarku-ai-monitor.php --dry-run  tampilkan data yang akan dikirim saja
+ * Monitoring log keamanan PasarKu menggunakan AI (checklist OWASP G6).
+ * Dipasang oleh deploy/server-setup.sh ke /usr/local/lib/pasarku/. Dua cara menjalankan analisis:
  *
- * AKTIF HANYA BILA API KEY DIISI di /etc/default/pasarku-monitor (milik root, mode 600):
+ * 1) Dari laptop pemilik lewat AI lokal (9router), deploy/ai-monitor-local.ps1 tiap 6 jam:
+ *      php pasarku-ai-monitor.php --export   cetak ringkasan log + instruksi + skema (JSON) untuk laptop
+ *      php pasarku-ai-monitor.php --record   baca hasil analisis (JSON) dari stdin, validasi, simpan
+ *    Server tidak menyimpan kredensial AI apa pun dan port 9router tidak dibuka ke internet.
+ *
+ * 2) Langsung dari server ke Claude API (cron tiap 6 jam):
+ *      php pasarku-ai-monitor.php            kirim ke Claude, simpan hasil
+ *      php pasarku-ai-monitor.php --dry-run  tampilkan data yang akan dikirim saja
+ *
+ * Mode 2 AKTIF HANYA BILA API KEY DIISI di /etc/default/pasarku-monitor (milik root, mode 600):
  *   ANTHROPIC_API_KEY=sk-ant-...
  *   PASARKU_AI_MODEL=claude-opus-5-5        (opsional)
  *   AI_WINDOW_HOURS=6                       (opsional)
@@ -22,6 +29,9 @@ declare(strict_types=1);
 require __DIR__.'/security-log.php';
 
 $dryRun = in_array('--dry-run', $argv, true);
+$export = in_array('--export', $argv, true);
+$record = in_array('--record', $argv, true);
+$lastFile = '/var/lib/pasarku/ai-monitor-last.json';
 $cfg = pasarku_config();
 $hours = max(1, min(48, (int) ($cfg['AI_WINDOW_HOURS'] ?? 6)));
 $model = $cfg['PASARKU_AI_MODEL'] ?? 'claude-opus-5-5';
@@ -86,14 +96,87 @@ $body = [
     'fallbacks' => 'default',
 ];
 
+/** Pastikan hasil analisis sesuai skema; teks dipotong agar log tetap rapi. */
+function pasarku_ai_clean(mixed $r): ?array
+{
+    $levels = ['rendah', 'sedang', 'tinggi'];
+    if (! is_array($r) || ! in_array($r['risk'] ?? null, $levels, true) || ! is_string($r['summary'] ?? null)
+        || ! is_array($r['findings'] ?? null) || ! is_array($r['actions'] ?? null)) {
+        return null;
+    }
+    $cut = fn (mixed $v, int $n): string => mb_substr(trim(preg_replace('/\s+/u', ' ', (string) $v)), 0, $n);
+    $findings = [];
+    foreach (array_slice($r['findings'], 0, 20) as $f) {
+        if (! is_array($f) || ! in_array($f['severity'] ?? null, $levels, true)) {
+            return null;
+        }
+        $findings[] = ['title' => $cut($f['title'] ?? '', 200), 'evidence' => $cut($f['evidence'] ?? '', 500), 'severity' => $f['severity']];
+    }
+
+    return [
+        'risk' => $r['risk'],
+        'summary' => $cut($r['summary'], 1000),
+        'findings' => $findings,
+        'actions' => array_map(fn ($a): string => $cut($a, 300), array_slice(array_filter($r['actions'], 'is_string'), 0, 10)),
+    ];
+}
+
+function pasarku_ai_store(array $result, string $model, string $source, int $hours, array $stats, string $logFile, string $lastFile): void
+{
+    $result['model'] = mb_substr($model, 0, 80);
+    $result['source'] = $source;
+    $result['analyzed_at'] = date('c');
+    $result['window_hours'] = $hours;
+    $result['stats'] = ['login_ok' => $stats['logins'], 'login_gagal' => $stats['failed'], 'aksi_admin' => count($stats['admin_actions'])];
+
+    @mkdir(dirname($lastFile), 0750, true);
+    @file_put_contents($lastFile, json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    $line = "risk={$result['risk']} temuan=".count($result['findings'])." sumber={$source} model={$result['model']} ringkasan={$result['summary']}";
+    pasarku_write_log($logFile, $line);
+    if ($result['risk'] === 'tinggi') {
+        pasarku_syslog('pasarku-ai-monitor', 'Risiko TINGGI: '.$result['summary']);
+    }
+
+    echo $line.PHP_EOL;
+    foreach ($result['findings'] as $finding) {
+        echo "- [{$finding['severity']}] {$finding['title']}: {$finding['evidence']}".PHP_EOL;
+    }
+    foreach ($result['actions'] as $action) {
+        echo "  tindakan: {$action}".PHP_EOL;
+    }
+}
+
+if ($export) {
+    echo json_encode(['system' => $system, 'report' => $report, 'schema' => $schema, 'window_hours' => $hours], JSON_THROW_ON_ERROR).PHP_EOL;
+    exit(0);
+}
+
+if ($record) {
+    $payload = json_decode((string) stream_get_contents(STDIN), true);
+    $result = pasarku_ai_clean($payload['result'] ?? null);
+    if ($result === null) {
+        pasarku_write_log($logFile, 'GAGAL: hasil dari laptop tidak sesuai skema.');
+        fwrite(STDERR, "Hasil tidak sesuai skema.\n");
+        exit(1);
+    }
+    pasarku_ai_store($result, (string) ($payload['model'] ?? '?'), 'laptop-9router', $hours, $stats, $logFile, $lastFile);
+    exit(0);
+}
+
 if ($dryRun) {
     echo "Model: {$model}\nAPI key: ".($apiKey !== '' ? 'terisi' : 'BELUM DIISI')."\n\n{$report}\n";
     exit(0);
 }
 
 if ($apiKey === '') {
-    pasarku_write_log($logFile, 'Nonaktif: ANTHROPIC_API_KEY belum diisi di /etc/default/pasarku-monitor.');
-    echo "AI monitor nonaktif: isi ANTHROPIC_API_KEY di /etc/default/pasarku-monitor.\n";
+    // Analisis dijalankan dari laptop (9router): jangan tulis "Nonaktif" selama hasilnya masih baru.
+    $last = json_decode((string) @file_get_contents($lastFile), true);
+    if (($last['source'] ?? '') === 'laptop-9router' && strtotime((string) ($last['analyzed_at'] ?? '')) > time() - 26 * 3600) {
+        exit(0);
+    }
+    pasarku_write_log($logFile, 'Nonaktif: belum ada hasil dari laptop (ai-monitor-local.ps1) dan ANTHROPIC_API_KEY kosong.');
+    echo "AI monitor nonaktif: jalankan deploy/ai-monitor-local.ps1 di laptop atau isi ANTHROPIC_API_KEY.\n";
     exit(0);
 }
 
@@ -137,30 +220,10 @@ foreach ($response['content'] ?? [] as $block) {
         $text .= $block['text'];
     }
 }
-$result = json_decode($text, true);
-if (! is_array($result) || ! isset($result['risk'])) {
+$result = pasarku_ai_clean(json_decode($text, true));
+if ($result === null) {
     pasarku_write_log($logFile, 'Jawaban tidak sesuai format (stop_reason='.($response['stop_reason'] ?? '?').').');
     exit(1);
 }
 
-$result['model'] = $response['model'] ?? $model;
-$result['analyzed_at'] = date('c');
-$result['window_hours'] = $hours;
-$result['stats'] = ['login_ok' => $stats['logins'], 'login_gagal' => $stats['failed'], 'aksi_admin' => count($stats['admin_actions'])];
-
-@mkdir('/var/lib/pasarku', 0750, true);
-@file_put_contents('/var/lib/pasarku/ai-monitor-last.json', json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-$line = "risk={$result['risk']} temuan=".count($result['findings'])." model={$result['model']} ringkasan=".str_replace("\n", ' ', $result['summary']);
-pasarku_write_log($logFile, $line);
-if ($result['risk'] === 'tinggi') {
-    pasarku_syslog('pasarku-ai-monitor', 'Risiko TINGGI: '.$result['summary']);
-}
-
-echo $line.PHP_EOL;
-foreach ($result['findings'] as $finding) {
-    echo "- [{$finding['severity']}] {$finding['title']}: {$finding['evidence']}".PHP_EOL;
-}
-foreach ($result['actions'] as $action) {
-    echo "  tindakan: {$action}".PHP_EOL;
-}
+pasarku_ai_store($result, (string) ($response['model'] ?? $model), 'server-anthropic', $hours, $stats, $logFile, $lastFile);

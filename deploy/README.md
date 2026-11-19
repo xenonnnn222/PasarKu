@@ -86,13 +86,17 @@ Jangan menjalankan `migrate:fresh`, `db:wipe`, atau mengganti `APP_KEY` pada dat
 - **Fail2Ban**: jail `sshd` dan `pasarku-login` (10 login gagal dalam 10 menit → IP diblokir 1 jam).
 - **Monitoring log** (`deploy/monitor/`):
   - `pasarku-monitor.php` tiap 15 menit, berbasis aturan: brute force per IP, lonjakan login gagal, perubahan akun oleh admin → `/var/log/pasarku-monitor.log` dan syslog.
-  - `pasarku-ai-monitor.php` tiap 6 jam: ringkasan dan maks. 150 baris `security.log` dianalisis Claude (Anthropic API) → `/var/log/pasarku-ai-monitor.log`. **Aktif setelah API key diisi**:
-    ```bash
-    sudo nano /etc/default/pasarku-monitor      # isi: ANTHROPIC_API_KEY=sk-ant-...
-    sudo php /usr/local/lib/pasarku/pasarku-ai-monitor.php --dry-run   # lihat data yang akan dikirim
-    sudo php /usr/local/lib/pasarku/pasarku-ai-monitor.php             # jalankan sekarang
-    ```
-    Data yang terkirim ke Anthropic: IP, user agent, dan nomor HP yang sudah disamarkan.
+  - Analisis AI tiap 6 jam (G6), pilih salah satu:
+    - **Dari laptop lewat 9router lokal** (`deploy/ai-monitor-local.ps1`): laptop mengambil ringkasan log lewat SSH (`--export`), menganalisisnya dengan model di 9router (`http://localhost:20128/v1`), lalu mengirim hasilnya kembali (`--record`) ke `/var/log/pasarku-ai-monitor.log`. Server tidak menyimpan kredensial AI.
+      ```powershell
+      # API key dari dashboard 9router, satu baris:
+      notepad $env:USERPROFILE\.pasarku\9router.key
+      powershell -ExecutionPolicy Bypass -File deployi-monitor-local.ps1            # sekali jalan
+      powershell -ExecutionPolicy Bypass -File deployi-monitor-local.ps1 -Install   # jadwal tiap 6 jam
+      ```
+    - **Langsung dari server ke Claude API**: isi `ANTHROPIC_API_KEY=sk-ant-...` di `/etc/default/pasarku-monitor` (`--dry-run` untuk melihat data yang akan dikirim).
+
+    Data yang dianalisis: jumlah login, IP dengan login gagal, user agent, aktivitas admin; nomor HP sudah disamarkan.
 - **Backup harian** + uji pemulihan otomatis (`PRAGMA integrity_check` dan hitung isi tabel) di `/var/backups/pasarku`, disimpan 14 hari, dengan file `.sha256`. Log: `/var/log/pasarku-backup.log`.
 - **Hak akses minimum** dipasang ulang unit systemd `pasarku-permissions` setiap job selesai.
 - **Bukti audit**: setiap build mencetak blok `[audit]` di Console Output (permission, backup, Fail2Ban, SSH, PHP-FPM, monitoring).
