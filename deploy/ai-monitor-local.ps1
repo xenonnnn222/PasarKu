@@ -24,7 +24,7 @@ param(
     [int]$Port = 2222,
     [string]$User = 'root',
     [string]$BaseUrl = 'http://localhost:20128/v1',
-    [string]$Model = 'cc/claude-haiku-4-5-20251001',
+    [string]$Model = 'cc/claude-haiku-5-5',
     [string]$KeyFile = (Join-Path $env:USERPROFILE '.pasarku\9router.key'),
     [string]$LogDir = (Join-Path $env:USERPROFILE 'PasarKu-ai'),
     [switch]$Install
