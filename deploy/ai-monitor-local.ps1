@@ -75,6 +75,7 @@ try {
     $schemaJson = $export.schema | ConvertTo-Json -Depth 20 -Compress
     $body = @{
         model = $Model
+        stream = $false
         max_tokens = 4000
         temperature = 0
         messages = @(
@@ -86,8 +87,22 @@ try {
     $resp = Invoke-WebRequest -Uri "$BaseUrl/chat/completions" -Method Post -UseBasicParsing -TimeoutSec 240 `
         -Headers @{ Authorization = "Bearer $apiKey" } -ContentType 'application/json; charset=utf-8' -Body $bytes
     $reader = New-Object IO.StreamReader($resp.RawContentStream, [Text.Encoding]::UTF8)
-    $chat = $reader.ReadToEnd() | ConvertFrom-Json
-    $text = [string]$chat.choices[0].message.content
+    $raw = $reader.ReadToEnd()
+    if ($raw.TrimStart().StartsWith('data:')) {
+        # Sebagian provider di 9router tetap menjawab streaming (SSE): gabungkan potongan delta.content.
+        $chat = $null; $text = ''
+        foreach ($l in ($raw -split "`n")) {
+            $l = $l.Trim()
+            if (-not $l.StartsWith('data:') -or $l -eq 'data: [DONE]') { continue }
+            $chunk = $l.Substring(5).Trim() | ConvertFrom-Json
+            if (-not $chat) { $chat = $chunk }
+            $text += [string]$chunk.choices[0].delta.content
+        }
+    }
+    else {
+        $chat = $raw | ConvertFrom-Json
+        $text = [string]$chat.choices[0].message.content
+    }
 
     # Ambil objek JSON dari jawaban (abaikan pagar ```json bila ada).
     $start = $text.IndexOf('{'); $end = $text.LastIndexOf('}')
