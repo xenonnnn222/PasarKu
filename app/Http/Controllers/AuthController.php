@@ -49,7 +49,11 @@ class AuthController extends Controller
     {
         $data = $request->validated();
 
-        if (! Auth::attempt(['phone' => $data['phone'], 'password' => $data['pin']])) {
+        // Akun yang dinonaktifkan admin ditolak dengan pesan yang sama (tidak membocorkan status akun).
+        if (! Auth::attemptWhen(
+            ['phone' => $data['phone'], 'password' => $data['pin']],
+            fn (User $user): bool => ! $user->isDisabled(),
+        )) {
             throw ValidationException::withMessages([
                 'phone' => 'Nomor HP atau PIN tidak sesuai.',
             ]);

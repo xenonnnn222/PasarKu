@@ -72,21 +72,60 @@ Jangan menjalankan `migrate:fresh`, `db:wipe`, atau mengganti `APP_KEY` pada dat
 
 ## 5. Keamanan (hasil audit OWASP)
 
-### Otomatis lewat Jenkins
+### Otomatis lewat Jenkins (deploy/ci.sh → deploy/server-setup.sh)
 
-- **Header keamanan** (`app/Http/Middleware/SecurityHeaders.php`): Content-Security-Policy, Strict-Transport-Security (HTTPS), Permissions-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Cross-Origin-Opener-Policy.
-- **Hanya HTTPS domain**: `apache-pasarku.conf` mengalihkan akses lewat IP atau HTTP biasa (mis. `http://103.139.193.51/pasarku/login`) ke `https://dragonfruitdevops.web.id/pasarku/...`, dan menyembunyikan versi Apache (`ServerTokens Prod`).
+- **Header keamanan** (`app/Http/Middleware/SecurityHeaders.php`): Content-Security-Policy tanpa `unsafe-inline`, Strict-Transport-Security (HTTPS), Permissions-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Cross-Origin-Opener-Policy. Tidak ada atribut `style` inline: lebar grafik memakai kelas `.w-N`/`.h-N` di `public/css/app.css`, halaman error memakai `resources/views/errors/`.
+- **Hanya HTTPS domain**: `apache-pasarku.conf` mengalihkan akses lewat IP atau HTTP biasa ke `https://dragonfruitdevops.web.id/pasarku/...`; versi Apache disembunyikan.
 - **Sesi 30 menit** tanpa aktivitas.
-- **Log keamanan** `storage/logs/security.log`: login, logout, dan login gagal (nomor HP disamarkan, IP dicatat).
-- **Backup harian** + uji pemulihan otomatis (`PRAGMA integrity_check` dan hitung isi tabel) di `/var/backups/pasarku`, disimpan 14 hari. Log: `/var/log/pasarku-backup.log`.
+- **Peran pengguna**: `pemilik` (default) dan `admin`. Admin membuka `/pasarku/admin` untuk melihat daftar akun (tanpa data keuangan) dan menonaktifkan/mengaktifkan akun pemilik. Peran admin hanya diberikan dari server:
+  ```bash
+  cd /var/www/html/pasarku && sudo -u www-data php artisan pasarku:role 08xxxxxxxxxx admin
+  ```
+- **Log keamanan** `storage/logs/security.log`: login, logout, login gagal (nomor HP disamarkan), dan setiap aktivitas admin (juga di tabel `audit_logs`).
+- **PHP-FPM khusus PasarKu** (`php-fpm-pool-pasarku.conf`): `exec`, `system`, `shell_exec`, `proc_open` dkk. dimatikan hanya untuk website ini; situs PHP lain dan CLI tidak terpengaruh.
+- **Fail2Ban**: jail `sshd` dan `pasarku-login` (10 login gagal dalam 10 menit → IP diblokir 1 jam).
+- **Monitoring log** (`deploy/monitor/`):
+  - `pasarku-monitor.php` tiap 15 menit, berbasis aturan: brute force per IP, lonjakan login gagal, perubahan akun oleh admin → `/var/log/pasarku-monitor.log` dan syslog.
+  - `pasarku-ai-monitor.php` tiap 6 jam: ringkasan dan maks. 150 baris `security.log` dianalisis Claude (Anthropic API) → `/var/log/pasarku-ai-monitor.log`. **Aktif setelah API key diisi**:
+    ```bash
+    sudo nano /etc/default/pasarku-monitor      # isi: ANTHROPIC_API_KEY=sk-ant-...
+    sudo php /usr/local/lib/pasarku/pasarku-ai-monitor.php --dry-run   # lihat data yang akan dikirim
+    sudo php /usr/local/lib/pasarku/pasarku-ai-monitor.php             # jalankan sekarang
+    ```
+    Data yang terkirim ke Anthropic: IP, user agent, dan nomor HP yang sudah disamarkan.
+- **Backup harian** + uji pemulihan otomatis (`PRAGMA integrity_check` dan hitung isi tabel) di `/var/backups/pasarku`, disimpan 14 hari, dengan file `.sha256`. Log: `/var/log/pasarku-backup.log`.
+- **Hak akses minimum** dipasang ulang unit systemd `pasarku-permissions` setiap job selesai.
+- **Bukti audit**: setiap build mencetak blok `[audit]` di Console Output (permission, backup, Fail2Ban, SSH, PHP-FPM, monitoring).
 
-Agar backup juga tersimpan di **server lain**, buat `/etc/default/pasarku-backup`:
+### SSH: port baru dan hanya SSH key (I2, I8)
 
-```bash
-BACKUP_REMOTE=user@server-backup:/srv/backup/pasarku/
+Deploy otomatis hanya **menambah** port 2222 (port 22 tetap terbuka, password tetap boleh), jadi tidak ada yang terkunci. Langkah akhir dilakukan sekali oleh Anda:
+
+1. Bila provider VPS punya firewall di panel, buka port **2222**.
+2. Buat SSH key di laptop (Windows PowerShell) dan pasang ke server:
+   ```powershell
+   ssh-keygen -t ed25519
+   type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh -p 2222 root@103.139.193.51 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+   ```
+3. Masuk lagi **lewat port 2222 dengan key** (tidak diminta password), lalu konfirmasi:
+   ```bash
+   ssh -p 2222 root@103.139.193.51
+   sudo pasarku-ssh-confirm
+   ```
+   Perintah ini menolak berjalan bila sesi tidak masuk lewat port 2222 atau tidak login dengan key. Bila lolos, port 22 ditutup dan login password dimatikan. Membatalkan (dari konsol VPS): `sudo pasarku-ssh-confirm --undo`.
+
+Port lain bisa diatur di `/etc/default/pasarku-ssh` (`SSH_PORT=2222`) sebelum deploy.
+
+### Backup di mesin lain (J3)
+
+Setelah SSH key terpasang, tarik backup ke laptop dan pasang jadwal hariannya:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\pull-backup.ps1
+powershell -ExecutionPolicy Bypass -File deploy\pull-backup.ps1 -Install
 ```
 
-lalu pasang SSH key root ke server tujuan (`sudo ssh-copy-id user@server-backup`).
+Salinan tersimpan di `%USERPROFILE%\PasarKu-backup`, dicek SHA-256 dan format gzip, dan server mencatat waktu penarikan terakhir (`/var/backups/pasarku/.last-offsite-pull`, tampil di blok `[audit]`). Untuk mesin Linux lain: `deploy/pull-backup.sh`. Alternatif push ke server lain: `BACKUP_REMOTE=user@host:/path/` di `/etc/default/pasarku-backup`.
 
 Memulihkan backup:
 
@@ -100,18 +139,11 @@ sudo rm -f /var/www/html/pasarku/database/database.sqlite-wal /var/www/html/pasa
 sudo systemctl start php8.3-fpm
 ```
 
-### Manual sekali: hardening server
-
-SSH, firewall, Fail2Ban, dan PHP-FPM diubah lewat skrip terpisah karena salah konfigurasi SSH bisa mengunci akses. **Pastikan SSH key sudah terpasang** (`ssh-copy-id user@103.139.193.51`) dan login dengan key berhasil.
+### Cek manual
 
 ```bash
-sudo SSH_PORT=2222 bash /var/www/html/pasarku/deploy/hardening-server.sh
+sudo fail2ban-client status pasarku-login
+sudo tail /var/log/pasarku-monitor.log /var/log/pasarku-ai-monitor.log
+sudo sshd -T | grep -E '^(port|passwordauthentication) '
+stat -c '%U:%G %a %n' /var/www/html/pasarku/.env /var/www/html/pasarku/app
 ```
-
-Tahap ini menyalakan UFW (SSH 22 + 2222, 80, 443), Fail2Ban (jail `sshd` dan `pasarku-login`), menonaktifkan `exec`/`system`/`shell_exec`/`proc_open` dkk. di PHP-FPM, serta mematikan login SSH dengan password. Port 22 masih terbuka. Dari **terminal lain** uji `ssh -p 2222 user@103.139.193.51`; bila berhasil, tutup port 22:
-
-```bash
-sudo SSH_PORT=2222 bash /var/www/html/pasarku/deploy/hardening-server.sh --close-22
-```
-
-Bila provider VPS punya firewall di panel, buka port 2222 di sana juga. Cek hasil: `sudo ufw status verbose`, `sudo fail2ban-client status pasarku-login`, `php-fpm8.3 -i | grep disable_functions`.

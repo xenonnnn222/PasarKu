@@ -1,0 +1,5 @@
+# Dipasang oleh deploy/server-setup.sh ke /etc/cron.d/pasarku-monitor.
+# G5: monitoring berbasis aturan tiap 15 menit. G6: analisis AI (Claude API) tiap 6 jam, aktif bila
+# ANTHROPIC_API_KEY diisi di /etc/default/pasarku-monitor.
+*/15 * * * * root php /usr/local/lib/pasarku/pasarku-monitor.php >/dev/null 2>&1
+5 */6 * * * root php /usr/local/lib/pasarku/pasarku-ai-monitor.php >/dev/null 2>&1

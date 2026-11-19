@@ -11,12 +11,12 @@ use Symfony\Component\HttpFoundation\Response;
 class SecurityHeaders
 {
     /**
-     * Semua skrip dan stylesheet berasal dari aplikasi sendiri. Atribut style inline
-     * tetap diizinkan karena grafik dan progress bar memakai width/height dinamis.
+     * Semua skrip dan stylesheet berasal dari aplikasi sendiri; tidak ada style/script inline.
+     * Grafik dan progress bar memakai kelas .w-N / .h-N di app.css, bukan atribut style.
      */
     private const CONTENT_SECURITY_POLICY = "default-src 'self'; "
         ."script-src 'self'; "
-        ."style-src 'self' 'unsafe-inline'; "
+        ."style-src 'self'; "
         ."img-src 'self' data:; "
         ."font-src 'self'; "
         ."connect-src 'self'; "

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\UserRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\MassPrunable;
@@ -20,8 +21,10 @@ class User extends Authenticatable
         'theme' => 'light',
         'font_size' => 'normal',
         'is_demo' => false,
+        'role' => 'pemilik',
     ];
 
+    /** role dan disabled_at sengaja tidak fillable: hanya diubah lewat AdminController / artisan. */
     protected $fillable = [
         'name',
         'business_name',
@@ -44,7 +47,19 @@ class User extends Authenticatable
             'password' => 'hashed',
             'starting_cash' => 'integer',
             'is_demo' => 'boolean',
+            'role' => UserRole::class,
+            'disabled_at' => 'datetime',
         ];
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role === UserRole::Admin && ! $this->is_demo;
+    }
+
+    public function isDisabled(): bool
+    {
+        return $this->disabled_at !== null;
     }
 
     /**

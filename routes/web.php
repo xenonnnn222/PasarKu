@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DebtController;
 use App\Http\Controllers\PageController;
@@ -54,4 +55,11 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/pengaturan/cadangan', [SettingsController::class, 'backup'])->name('settings.backup');
     Route::post('/pengaturan/reset', [SettingsController::class, 'reset'])->middleware('throttle:10,1')->name('settings.reset');
     Route::delete('/pengaturan/data', [SettingsController::class, 'clear'])->middleware('throttle:10,1')->name('settings.clear');
+});
+
+// Panel admin sistem: hanya peran admin (Gate 'admin'), selain itu 403.
+Route::middleware(['auth', 'can:admin'])->prefix('admin')->name('admin.')->group(function (): void {
+    Route::get('/', [AdminController::class, 'index'])->name('index');
+    Route::post('/akun/{user}/nonaktifkan', [AdminController::class, 'disable'])->middleware('throttle:30,1')->name('disable');
+    Route::post('/akun/{user}/aktifkan', [AdminController::class, 'enable'])->middleware('throttle:30,1')->name('enable');
 });

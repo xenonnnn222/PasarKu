@@ -12,7 +12,8 @@
     ] as [$route,$icon,$label])
         @php($active=request()->routeIs($route)||($route==='transactions.index'&&request()->routeIs('transactions.edit')))
         <a href="{{ route($route) }}" class="nav-link {{ $active?'active':'' }}" @if($active) aria-current="page" @endif><x-icon :name="$icon"/><span>{{ $label }}</span></a>
-    @endforeach</nav>
+    @endforeach
+    @can('admin')<a href="{{ route('admin.index') }}" class="nav-link {{ request()->routeIs('admin.*')?'active':'' }}" @if(request()->routeIs('admin.*')) aria-current="page" @endif><x-icon name="check"/><span>Admin sistem</span></a>@endcan</nav>
     <div class="sidebar-bottom"><div class="account"><span class="avatar">{{ mb_substr(auth()->user()->name,0,1) }}</span><span><strong>{{ auth()->user()->name }}</strong><small>{{ auth()->user()->business_name }}</small></span></div><form method="post" action="{{ route('logout') }}">@csrf<button class="nav-link" type="submit"><x-icon name="logout"/> Keluar akun</button></form></div>
 </aside>
 <div class="workspace"><header class="topbar"><button type="button" class="btn icon-button mobile-menu" data-menu-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Buka navigasi"><x-icon name="menu"/></button><div class="breadcrumb">Ruang usaha <span>/</span> <strong>@yield('title','Beranda')</strong></div><span class="today">{{ now()->translatedFormat('l, d F Y') }}</span><a href="{{ route('transactions.create') }}" class="btn primary topbar-action"><x-icon name="plus"/> Catat transaksi</a></header>

@@ -6,7 +6,9 @@
 # Pengaturan opsional di /etc/default/pasarku-backup:
 #   BACKUP_DIR=/var/backups/pasarku          lokasi salinan (di luar folder website)
 #   BACKUP_KEEP_DAYS=14                      lama penyimpanan
-#   BACKUP_REMOTE=user@server-lain:/backup/  salinan ke server lain lewat rsync+SSH key
+#   BACKUP_REMOTE=user@server-lain:/backup/  salinan ke server lain lewat rsync+SSH key (push)
+# Salinan terpisah juga bisa ditarik dari mesin lain (pull): deploy/pull-backup.ps1 (Windows)
+# atau deploy/pull-backup.sh (Linux/Jenkins lain); keduanya menandai /var/backups/pasarku/.last-offsite-pull.
 set -euo pipefail
 
 [[ -f /etc/default/pasarku-backup ]] && . /etc/default/pasarku-backup
@@ -46,10 +48,12 @@ check=$(php -r '
 gzip -9 -c "$tmp" >"$out"
 rm -f "$tmp"
 chmod 0600 "$out"
+# Checksum untuk verifikasi salinan di luar server (deploy/pull-backup.ps1 / pull-backup.sh).
+(cd "$BACKUP_DIR" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256" && chmod 0600 "$(basename "$out").sha256")
 log "Backup OK $out ($(du -h "$out" | cut -f1)), uji pemulihan lulus: $check"
 
 # 3. Rotasi.
-find "$BACKUP_DIR" -maxdepth 1 -name 'pasarku-*.sqlite.gz' -mtime +"$BACKUP_KEEP_DAYS" -delete
+find "$BACKUP_DIR" -maxdepth 1 \( -name 'pasarku-*.sqlite.gz' -o -name 'pasarku-*.sqlite.gz.sha256' \) -mtime +"$BACKUP_KEEP_DAYS" -delete
 
 # 4. Salinan di luar server (opsional, butuh SSH key root ke server tujuan).
 if [[ -n $BACKUP_REMOTE ]]; then

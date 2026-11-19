@@ -10,7 +10,7 @@
     su www-data www-data
 }
 
-/var/log/pasarku-backup.log {
+/var/log/pasarku-backup.log /var/log/pasarku-monitor.log /var/log/pasarku-ai-monitor.log {
     monthly
     rotate 6
     compress
