@@ -1,0 +1,8 @@
+# Dipasang oleh deploy/server-setup.sh.
+[Unit]
+Description=Hak akses minimum PasarKu setelah deploy
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pasarku-fix-permissions
+TimeoutStartSec=300

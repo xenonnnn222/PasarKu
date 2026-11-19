@@ -1,0 +1,11 @@
+# Dipasang oleh deploy/server-setup.sh. Memicu pasarku-permissions.service setiap kali
+# deploy menjalankan "php artisan optimize" (menulis ulang config cache).
+[Unit]
+Description=Pantau deploy PasarKu untuk memasang ulang hak akses minimum
+
+[Path]
+PathChanged=/var/www/html/pasarku/bootstrap/cache/config.php
+Unit=pasarku-permissions.service
+
+[Install]
+WantedBy=multi-user.target

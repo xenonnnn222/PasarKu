@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backup database SQLite PasarKu, lalu uji pemulihannya.
-# Dijalankan otomatis tiap hari oleh /etc/cron.d/pasarku-backup (dipasang deploy/jenkins.sh)
-# dan sebelum setiap migrasi. Manual: sudo bash /var/www/html/pasarku/deploy/backup-db.sh
+# Dipasang ke /usr/local/sbin/pasarku-backup oleh deploy/server-setup.sh; dijalankan tiap hari oleh /etc/cron.d/pasarku-backup
+# dan sebelum setiap deploy. Manual: sudo pasarku-backup
 #
 # Pengaturan opsional di /etc/default/pasarku-backup:
 #   BACKUP_DIR=/var/backups/pasarku          lokasi salinan (di luar folder website)

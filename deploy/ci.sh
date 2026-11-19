@@ -17,3 +17,14 @@ php artisan test --compact --log-junit build/junit.xml
 php artisan view:cache
 git rev-parse HEAD > build/tested-commit
 echo 'CI selesai: kode rapi (Pint), tes lulus, dan kompilasi Blade berhasil.'
+
+# Di server Jenkins (root), job berikutnya menjalankan rsync workspace → website tanpa
+# pengecualian tambahan. Bersihkan workspace dari file yang tidak boleh ikut ke server
+# (log tes, view hasil kompilasi, sisa build frontend lama), lalu siapkan server.
+if [[ -n ${JENKINS_HOME:-} && $EUID -eq 0 && -d /var/www/html/pasarku ]]; then
+    rm -rf node_modules dist .phpunit.result.cache
+    find storage/logs -maxdepth 1 -type f -name '*.log' -delete
+    find storage/framework/views storage/framework/sessions storage/framework/cache/data \
+        -type f ! -name '.gitignore' -delete 2>/dev/null || true
+    bash deploy/server-setup.sh
+fi

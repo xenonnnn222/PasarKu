@@ -14,26 +14,34 @@ Skrip ini memasang PHP 8.3-FPM (PPA ondrej/php, ditambahkan manual dengan pemeri
 
 ## 2. Job Jenkins
 
-Di job Freestyle, **Execute shell** berisi:
+Execute shell job Freestyle **tidak diubah** dan tetap berisi langkah berikut (Jenkins berjalan sebagai root):
 
 ```bash
-bash deploy/jenkins.sh
+bash deploy/ci.sh
+rsync -avz --exclude .git --exclude .env --exclude vendor --exclude build --exclude 'database/*.sqlite*' ./ /var/www/html/pasarku/
+cd /var/www/html/pasarku
+composer install --optimize-autoloader --no-dev --no-interaction
+php artisan migrate --force
+php artisan optimize
+chown -R www-data:www-data /var/www/html/pasarku
+chmod -R 775 /var/www/html/pasarku/storage
+chmod -R 775 /var/www/html/pasarku/bootstrap/cache
 ```
 
-`deploy/jenkins.sh` menjalankan langkah berikut:
+Semua perbaikan keamanan dijalankan dari dalam `deploy/ci.sh`, sehingga ikut berjalan tanpa mengubah job:
 
-| Perintah | Fungsi |
-|---|---|
-| `bash deploy/ci.sh` | Tes Laravel; jika gagal, langkah berikutnya tidak dijalankan |
-| `rsync -avz --exclude '.git' --exclude '.env' ... ./ /var/www/html/pasarku/` | Menyalin workspace Jenkins ke folder website; `.git`, `.env`, `vendor`, `build`, dan database tidak ikut |
-| `composer install --optimize-autoloader --no-dev` | Memasang library PHP produksi |
-| `set_env ...` | Memastikan `.env` server: `APP_ENV=production`, `APP_DEBUG=false`, `SESSION_LIFETIME=30`, `SESSION_SECURE_COOKIE=true` |
-| `bash deploy/backup-db.sh` | Backup database + uji pemulihan ke `/var/backups/pasarku` sebelum migrasi |
-| `php artisan migrate --force` | Memperbarui skema database |
-| `php artisan optimize` | Cache konfigurasi, route, dan view |
-| `chown` / `chmod` | Kode 755/644 milik user Jenkins (grup `www-data`, hanya baca); `storage`, `bootstrap/cache`, `database` 775/664 milik `www-data`; `.env` 640 |
-| `/etc/cron.d/pasarku-backup`, `/etc/logrotate.d/pasarku` | Backup harian 02:15 dan rotasi log |
-| `apache-pasarku.conf` → `/etc/apache2/conf-available/pasarku.conf` | Dipasang bila berubah; dibatalkan otomatis bila `apache2ctl configtest` gagal |
+| Urutan | Langkah | Fungsi |
+|---|---|---|
+| 1 | Tes di `deploy/ci.sh` | Pint, PHPUnit, kompilasi Blade. Bila gagal, langkah berikutnya tidak dijalankan |
+| 2 | Bersihkan workspace (akhir `ci.sh`) | Log tes, view hasil kompilasi, `node_modules`, `dist` dihapus agar tidak ikut di-rsync |
+| 3 | `deploy/server-setup.sh` (akhir `ci.sh`) | `.env` produksi (`APP_DEBUG=false`, `SESSION_LIFETIME=30`), backup + uji pemulihan, cron backup harian, logrotate, konfigurasi Apache (dibatalkan bila `configtest` gagal), unit systemd hak akses |
+| 4 | rsync, composer, migrate, optimize | Langkah job seperti biasa; `optimize` membaca `.env` yang sudah diperbarui |
+| 5 | `chown`/`chmod` job | Membuat semua file milik www-data (bawaan job) |
+| 6 | `pasarku-permissions.path` | Terpicu saat `optimize` menulis config cache; setelah `chown`/`chmod` job selesai, `pasarku-fix-permissions` memasang hak akses minimum: kode 755/644 milik root, hanya `storage`, `bootstrap/cache`, `database` yang bisa ditulis www-data, `.env` 640 |
+
+Skrip yang dijalankan root (`pasarku-backup`, `pasarku-fix-permissions`) disalin ke `/usr/local/sbin`, bukan dijalankan dari folder website, agar tidak bisa diubah oleh web server.
+
+`deploy/jenkins.sh` berisi langkah yang sama dalam satu skrip, untuk job baru atau deploy manual.
 
 Jenkins harus berjalan sebagai root (skrip berhenti dengan pesan jelas bila tidak).
 

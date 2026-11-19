@@ -1,4 +1,4 @@
-# Log PasarKu (dipasang oleh deploy/jenkins.sh). copytruncate: Laravel dan Fail2Ban tetap memakai file yang sama.
+# Log PasarKu (dipasang oleh deploy/server-setup.sh). copytruncate: Laravel dan Fail2Ban tetap memakai file yang sama.
 /var/www/html/pasarku/storage/logs/security.log /var/www/html/pasarku/storage/logs/laravel.log {
     weekly
     rotate 12
