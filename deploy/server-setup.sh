@@ -77,6 +77,21 @@ if ! cmp -s "$HERE/apache-pasarku.conf" "$APACHE_CONF"; then
     fi
 fi
 
+# 6b. Sembunyikan versi Apache. conf-enabled/security.conf bawaan Ubuntu (ServerTokens OS,
+#     ServerSignature On) dimuat setelah pasarku.conf dan menimpa pengaturannya.
+SECURITY_CONF=/etc/apache2/conf-available/security.conf
+if [[ -f $SECURITY_CONF ]] && grep -Eq '^\s*(ServerTokens (OS|Full|Minor|Major|Min)|ServerSignature On)' "$SECURITY_CONF"; then
+    cp -p "$SECURITY_CONF" "$SECURITY_CONF.bak-$(date +%Y%m%d%H%M%S)"
+    sed -i -E 's/^\s*ServerTokens\s+\S+/ServerTokens Prod/; s/^\s*ServerSignature\s+On/ServerSignature Off/' "$SECURITY_CONF"
+    if apache2ctl configtest; then
+        systemctl reload apache2
+        log 'Versi Apache disembunyikan (ServerTokens Prod, ServerSignature Off).'
+    else
+        echo 'configtest gagal setelah mengubah security.conf.' >&2
+        exit 1
+    fi
+fi
+
 # 7. Sisa salinan job lama yang tidak dipakai aplikasi.
 rm -rf "$APP/node_modules" "$APP/dist" "$APP/tests" "$APP/.phpunit.result.cache"
 
