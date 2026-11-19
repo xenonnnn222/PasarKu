@@ -13,10 +13,18 @@ APACHE_CONF=/etc/apache2/conf-available/pasarku.conf
 # Tes dulu; kalau gagal, website tidak disentuh.
 bash deploy/ci.sh
 
-# Sinkronisasi workspace Jenkins ke folder website. .env dan database di server tidak ditimpa.
-rsync -avz --exclude '.git' --exclude '.env' --exclude 'vendor' --exclude 'build' --exclude 'database/*.sqlite*' ./ "$APP/"
+# Sinkronisasi workspace Jenkins ke folder website. .env, database, log, sesi, dan cache di server
+# tidak ditimpa; sisa build lama di workspace (node_modules, dist) tidak ikut.
+rsync -az --itemize-changes \
+    --exclude '.git' --exclude '.env' --exclude 'vendor' --exclude 'build' --exclude 'database/*.sqlite*' \
+    --exclude 'node_modules' --exclude 'dist' --exclude '.phpunit.result.cache' --exclude 'tests' \
+    --exclude 'storage/logs/*.log' --exclude 'storage/framework/sessions/*' --exclude 'storage/framework/cache/*' \
+    --exclude 'storage/framework/views/*' --exclude 'bootstrap/cache/*.php' \
+    ./ "$APP/"
 
 cd "$APP"
+# Sisa salinan dari job lama yang tidak dipakai aplikasi.
+rm -rf node_modules dist tests .phpunit.result.cache
 composer install --optimize-autoloader --no-dev --no-interaction
 
 # Nilai .env server yang wajib sesuai standar audit (file .env tidak ikut rsync).
